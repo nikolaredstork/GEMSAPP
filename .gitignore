@@ -3,6 +3,7 @@ GEMS-STS-Test/
 GEMS-Thermal-Test2/
 .claude/
 
+venv/
 __pycache__/
 *.py[cod]
 *.pyo
