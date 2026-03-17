@@ -1,0 +1,2877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GEMS – Power System Editor</title>
+
+  <!-- vis-network -->
+  <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+  <!-- Socket.IO -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- Zoom/pan plugin (requires hammerjs) -->
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --surface2:  #1c2128;
+      --border:    #30363d;
+      --accent:    #58a6ff;
+      --green:     #3fb950;
+      --orange:    #f0883e;
+      --red:       #f85149;
+      --purple:    #bc8cff;
+      --teal:      #39c5cf;
+      --text:      #c9d1d9;
+      --muted:     #8b949e;
+      --header-h:  48px;
+      --palette-w: 180px;
+      --props-w:   280px;
+      --console-h: 200px;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── HEADER ── */
+    #header {
+      height: var(--header-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px; padding: 0 12px;
+      flex-shrink: 0;
+    }
+    #header h1 { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 1px; margin-right: 8px; }
+    #study-select { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+    .sep { flex: 1; }
+    .btn { padding: 5px 14px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 12px; cursor: pointer; transition: .15s; }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+    .btn.primary:hover { opacity: .85; }
+    .btn.danger { border-color: var(--red); color: var(--red); }
+    .btn.danger:hover { background: var(--red); color: #fff; }
+    .btn.success { border-color: var(--green); color: var(--green); }
+    .btn.success:hover { background: var(--green); color: #000; }
+    #run-btn.running { background: var(--red); color: #fff; border-color: var(--red); }
+    #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: .3s; }
+    #status-dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+    /* ── MAIN ── */
+    #main {
+      flex: 1; display: flex; overflow: hidden;
+    }
+
+    /* ── PALETTE ── */
+    #palette {
+      width: var(--palette-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow-y: auto; flex-shrink: 0;
+    }
+    #palette h2 { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); padding: 10px 12px 6px; }
+    .model-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; cursor: pointer; border-radius: 4px; margin: 1px 6px;
+      transition: .12s; border: 1px solid transparent;
+    }
+    .model-item:hover { background: var(--surface2); border-color: var(--border); }
+    .model-icon {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; flex-shrink: 0; border: 2px solid;
+    }
+    .model-label { font-size: 12px; font-weight: 500; }
+    .model-desc { font-size: 10px; color: var(--muted); }
+
+    .palette-sep { height: 1px; background: var(--border); margin: 8px 10px; }
+
+    /* Colors per type */
+    .type-area    { color: #4a9eff; border-color: #4a9eff; background: rgba(74,158,255,.15); }
+    .type-load    { color: var(--red); border-color: var(--red); background: rgba(248,81,73,.15); }
+    .type-thermal { color: var(--orange); border-color: var(--orange); background: rgba(240,136,62,.15); }
+    .type-renewable { color: var(--green); border-color: var(--green); background: rgba(63,185,80,.15); }
+    .type-link    { color: var(--purple); border-color: var(--purple); background: rgba(188,140,255,.15); }
+    .type-short-term-storage { color: var(--teal); border-color: var(--teal); background: rgba(57,197,207,.15); }
+
+    /* ── CANVAS ── */
+    #canvas-wrap {
+      flex: 1; position: relative; overflow: hidden;
+    }
+    #network { width: 100%; height: 100%; }
+
+    #canvas-hint {
+      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(22,27,34,.85); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 14px; font-size: 11px; color: var(--muted);
+      pointer-events: none;
+    }
+
+    /* ── PROPERTIES ── */
+    #properties {
+      width: var(--props-w);
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden; flex-shrink: 0;
+    }
+    #props-header {
+      padding: 10px 12px 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 6px;
+    }
+    #props-title { font-size: 12px; font-weight: 600; flex: 1; }
+    #props-body { flex: 1; overflow-y: auto; padding: 10px 12px; }
+
+    .prop-section { margin-bottom: 14px; }
+    .prop-section-title { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 6px; }
+    .prop-row { margin-bottom: 6px; }
+    .prop-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; display: flex; align-items: center; gap: 4px; }
+    .badge { font-size: 9px; padding: 1px 4px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); }
+    .prop-input {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 4px 7px; color: var(--text); font-size: 12px;
+      font-family: 'Consolas', monospace;
+    }
+    .prop-input:focus { outline: none; border-color: var(--accent); }
+    select.prop-input { cursor: pointer; }
+
+    .conn-chip {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 4px 8px; margin-bottom: 4px; font-size: 11px;
+    }
+    .conn-chip button { margin-left: auto; background: none; border: none; color: var(--red); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+    .conn-chip button:hover { color: #fff; }
+
+    #props-footer { padding: 8px 12px; border-top: 1px solid var(--border); display: flex; gap: 6px; flex-wrap: wrap; }
+    #props-placeholder { color: var(--muted); text-align: center; padding: 30px 10px; font-size: 12px; line-height: 1.7; }
+
+    /* solver params */
+    .solver-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+    /* ── CONSOLE ── */
+    #console-wrap {
+      height: var(--console-h);
+      border-top: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      flex-shrink: 0;
+    }
+    #console-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 10px; background: var(--surface); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #console-header span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+    #console-output {
+      flex: 1; overflow-y: auto; padding: 6px 10px;
+      font-family: 'Consolas', 'Courier New', monospace; font-size: 11px; line-height: 1.5;
+      color: var(--text); background: var(--bg);
+    }
+    .log-info  { color: var(--text); }
+    .log-ok    { color: var(--green); }
+    .log-warn  { color: var(--orange); }
+    .log-err   { color: var(--red); }
+    .log-head  { color: var(--accent); font-weight: bold; }
+
+    /* ── MODAL ── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.65);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      width: 420px; max-width: 95vw; max-height: 80vh; display: flex; flex-direction: column;
+      box-shadow: 0 16px 48px rgba(0,0,0,.6);
+    }
+    .modal-header {
+      padding: 14px 16px 10px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .modal-header h3 { font-size: 14px; font-weight: 600; flex: 1; }
+    .modal-header button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; }
+    .modal-header button:hover { color: var(--text); }
+    .modal-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+    .modal-footer { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+    .form-row { margin-bottom: 10px; }
+    .form-label { font-size: 11px; color: var(--muted); margin-bottom: 3px; display: block; }
+    .form-input {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 5px 8px; color: var(--text); font-size: 12px;
+    }
+    .form-input:focus { outline: none; border-color: var(--accent); }
+    .form-hint { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    /* ── TABS ── */
+    .tab-btn { background: none; border: none; color: var(--muted); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; }
+    .tab-btn.active { background: var(--surface2); color: var(--text); }
+    .tab-btn:hover:not(.active) { color: var(--text); }
+
+    /* ── RESULTS VIEW ── */
+    #results-sidebar {
+      width: 200px; background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+    }
+    .res-file-item {
+      padding: 7px 12px; cursor: pointer; font-size: 11px; border-bottom: 1px solid var(--border);
+      color: var(--muted); transition: .1s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .res-file-item:hover { background: var(--surface2); color: var(--text); }
+    .res-file-item.active { background: var(--surface2); color: var(--accent); border-left: 2px solid var(--accent); }
+
+    #results-controls {
+      display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+      background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .res-sel {
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 4px; padding: 4px 7px; font-size: 12px; cursor: pointer;
+    }
+    .res-sel:focus { outline: none; border-color: var(--accent); }
+
+    #res-stats-bar {
+      display: flex; gap: 8px; padding: 6px 14px; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 5px;
+      padding: 4px 12px; font-size: 11px;
+    }
+    .stat-card span { color: var(--muted); margin-right: 4px; }
+    .stat-card b { color: var(--accent); }
+
+    #res-objective {
+      margin: 0 14px 4px; padding: 6px 12px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 5px; font-size: 12px;
+      border-left: 3px solid var(--green);
+    }
+
+    /* Series legend chips */
+    .series-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 2px 8px; font-size: 11px; margin: 2px;
+    }
+    .series-chip .chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .series-chip button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
+    .series-chip button:hover { color: var(--red); }
+
+    /* ── LIBRARY EDITOR ── */
+    #lib-sidebar {
+      width:200px; background:var(--surface); border-right:1px solid var(--border);
+      display:flex; flex-direction:column; flex-shrink:0; overflow:hidden;
+    }
+    #lib-sidebar h2 { font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);padding:10px 12px 6px;border-bottom:1px solid var(--border);flex-shrink:0; }
+    #lib-file-list { flex:1; overflow-y:auto; }
+    .lib-file-item { padding:7px 12px;cursor:pointer;font-size:11px;border-bottom:1px solid var(--border);color:var(--muted);transition:.1s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .lib-file-item:hover  { background:var(--surface2);color:var(--text); }
+    .lib-file-item.active { background:var(--surface2);color:var(--accent);border-left:2px solid var(--accent); }
+
+    #lib-editor-wrap { flex:1;display:flex;flex-direction:column;overflow:hidden; }
+    #lib-header-bar {
+      display:flex;align-items:center;gap:8px;padding:7px 12px;flex-shrink:0;
+      background:var(--surface);border-bottom:1px solid var(--border);
+    }
+    #lib-header-bar input {
+      background:var(--surface2);border:1px solid var(--border);border-radius:4px;
+      padding:4px 8px;color:var(--text);font-size:12px;font-family:monospace;
+    }
+    #lib-header-bar input:focus { outline:none;border-color:var(--accent); }
+    #lib-id-input { width:160px;font-weight:600; }
+    #lib-desc-input { flex:1; }
+    #lib-dirty-badge { display:none;font-size:10px;color:var(--orange);background:rgba(240,136,62,.15);border:1px solid var(--orange);border-radius:3px;padding:1px 6px; }
+
+    #lib-body { flex:1;display:flex;overflow:hidden; }
+
+    /* Left: port-types + models list */
+    #lib-left { width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden; }
+    .lib-section-hdr {
+      display:flex;align-items:center;padding:6px 10px 4px;font-size:10px;text-transform:uppercase;
+      letter-spacing:.8px;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;
+    }
+    .lib-section-hdr span { flex:1; }
+    .lib-section-hdr button { background:none;border:none;color:var(--accent);cursor:pointer;font-size:16px;line-height:1;padding:0 2px; }
+    .lib-section-hdr button:hover { color:var(--text); }
+    #lib-port-list, #lib-model-list-inner { overflow-y:auto; }
+    #lib-port-list { max-height:150px;flex-shrink:0; }
+    #lib-model-list-inner { flex:1; }
+
+    .lib-item {
+      display:flex;align-items:center;padding:5px 10px;cursor:pointer;font-size:12px;
+      border-bottom:1px solid var(--border);transition:.1s;
+    }
+    .lib-item:hover  { background:var(--surface2); }
+    .lib-item.active { background:var(--surface2);border-left:2px solid var(--accent);color:var(--accent); }
+    .lib-item span   { flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .lib-item .del   { background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;line-height:1; }
+    .lib-item .del:hover { color:var(--red); }
+
+    /* Right: model editor */
+    #lib-model-editor { flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg); }
+    #lib-model-editor-placeholder { flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px; }
+    #lib-model-form { flex:1;display:none;flex-direction:column;overflow:hidden; }
+    #lib-model-form-hdr {
+      display:flex;align-items:center;gap:8px;padding:7px 12px;flex-shrink:0;
+      background:var(--surface);border-bottom:1px solid var(--border);
+    }
+    #lib-model-form-hdr input {
+      background:var(--bg);border:1px solid var(--border);border-radius:4px;
+      padding:4px 8px;color:var(--text);font-size:12px;font-family:monospace;
+    }
+    #lib-model-form-hdr input:focus { outline:none;border-color:var(--accent); }
+    #lib-model-id-input { width:160px;font-weight:600; }
+    #lib-model-desc-input { flex:1; }
+
+    /* Model section tabs */
+    #lib-model-tabs {
+      display:flex;gap:1px;padding:6px 10px 0;flex-shrink:0;
+      background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap;
+    }
+    .mst-btn { background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);padding:4px 10px;cursor:pointer;font-size:11px;font-weight:500; }
+    .mst-btn.active { color:var(--accent);border-bottom-color:var(--accent); }
+    .mst-btn:hover:not(.active) { color:var(--text); }
+
+    #lib-model-tab-body { flex:1;overflow:auto;padding:10px 14px; }
+
+    /* section table inside model editor */
+    .sec-tbl { width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px; }
+    .sec-tbl th { background:var(--surface);border:1px solid var(--border);padding:4px 8px;color:var(--muted);text-align:left;font-weight:600;white-space:nowrap; }
+    .sec-tbl td { border:1px solid var(--border);padding:3px 7px;vertical-align:top; }
+    .sec-tbl tr:hover td { background:var(--surface2); }
+    .sec-tbl td.act-cell { white-space:nowrap; }
+    .sec-tbl td button { background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0 3px; }
+    .sec-tbl td button:hover { color:var(--red); }
+    .sec-tbl td button.edit-btn:hover { color:var(--accent); }
+    .bool-yes { color:var(--green);font-weight:bold; }
+    .bool-no  { color:var(--muted); }
+
+    .expr-cell { font-family:monospace;font-size:10px;color:var(--purple);word-break:break-all; }
+
+    /* Inline add/edit form row */
+    .sec-add-form {
+      background:var(--surface2);border:1px solid var(--accent);border-radius:5px;
+      padding:10px 12px;margin-bottom:8px;
+    }
+    .sec-add-form .form-grid { display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); }
+    .sec-add-form label { font-size:10px;color:var(--muted);display:block;margin-bottom:2px; }
+    .sec-add-form input,.sec-add-form select,.sec-add-form textarea {
+      width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;
+      padding:4px 7px;color:var(--text);font-size:11px;font-family:monospace;
+    }
+    .sec-add-form input:focus,.sec-add-form select:focus,.sec-add-form textarea:focus { outline:none;border-color:var(--accent); }
+    .sec-add-form textarea { resize:vertical;min-height:54px;grid-column:1/-1; }
+    .sec-add-form .form-btns { display:flex;gap:6px;margin-top:8px; }
+
+    /* Port type inline editor */
+    #pt-edit-form { background:var(--surface2);border:1px solid var(--accent);border-radius:5px;padding:10px;margin:6px; }
+    #pt-edit-form input { width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;color:var(--text);font-size:11px;margin-bottom:6px;font-family:monospace; }
+    #pt-edit-form input:focus { outline:none;border-color:var(--accent); }
+    .field-row { display:flex;gap:4px;margin-bottom:4px;align-items:center; }
+    .field-row input { flex:1; }
+    .field-row button { background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 2px; }
+
+    /* palette library group header */
+    .palette-lib-hdr { font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);padding:8px 12px 3px;background:var(--bg); }
+
+    /* ── VIEW TOGGLE (chart / table) ── */
+    .view-toggle-bar { display:flex; gap:2px; background:var(--bg); border-radius:5px; padding:2px; }
+    .vt-btn { background:none; border:none; color:var(--muted); padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; }
+    .vt-btn.active { background:var(--surface2); color:var(--text); }
+
+    /* ── SHARED DATA / RESULTS TABLE ── */
+    .data-table-wrap { flex:1; overflow:auto; }
+    .data-tbl { border-collapse:collapse; font-size:11px; font-family:'Consolas',monospace; min-width:100%; }
+    .data-tbl th {
+      position:sticky; top:0; background:var(--surface); border:1px solid var(--border);
+      padding:5px 10px; color:var(--muted); font-weight:600; text-align:right; white-space:nowrap; z-index:2;
+    }
+    .data-tbl th.row-hdr { left:0; z-index:3; text-align:left; }
+    .data-tbl td {
+      border:1px solid var(--border); padding:3px 8px; text-align:right;
+      color:var(--text); white-space:nowrap;
+    }
+    .data-tbl td.row-hdr {
+      position:sticky; left:0; background:var(--surface); color:var(--muted);
+      font-weight:600; text-align:left; z-index:1;
+    }
+    .data-tbl td[contenteditable]:focus { outline:2px solid var(--accent); background:var(--surface2); }
+    .data-tbl td.dirty { background: rgba(88,166,255,.12); }
+    .data-tbl tr:hover td { background:var(--surface2); }
+    .data-tbl tr:hover td.row-hdr { background:var(--surface); }
+
+    /* ── DATA TAB ── */
+    #data-sidebar {
+      width:200px; background:var(--surface); border-right:1px solid var(--border);
+      display:flex; flex-direction:column; flex-shrink:0; overflow:hidden;
+    }
+    #data-sidebar h2 { font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); padding:10px 12px 6px; border-bottom:1px solid var(--border); flex-shrink:0; }
+    #data-file-list { overflow-y:auto; flex:1; }
+    .data-file-item {
+      padding:7px 12px; cursor:pointer; font-size:11px; border-bottom:1px solid var(--border);
+      color:var(--muted); transition:.1s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .data-file-item:hover  { background:var(--surface2); color:var(--text); }
+    .data-file-item.active { background:var(--surface2); color:var(--accent); border-left:2px solid var(--accent); }
+
+    #data-toolbar {
+      display:flex; align-items:center; gap:8px; padding:7px 12px;
+      background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0;
+    }
+    #data-filename { font-size:12px; font-weight:600; color:var(--text); font-family:monospace; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #data-dirty-badge { display:none; font-size:10px; color:var(--orange); background:rgba(240,136,62,.15); border:1px solid var(--orange); border-radius:3px; padding:1px 6px; }
+
+    #data-chart-wrap { flex:1; position:relative; padding:10px 14px 6px; }
+    /* ensure chart containers always have height even before layout settles */
+    #res-chart-view, #data-chart-view { min-height: 180px; }
+    #res-chart, #data-chart { display:block; }
+
+    /* scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════ HEADER ═══════════════════ -->
+<div id="header">
+  <h1>⚡ GEMS</h1>
+  <select id="study-select" onchange="loadStudy(this.value)"></select>
+  <button class="btn" onclick="openNewStudyModal()" title="Create new study" style="padding:4px 10px;">⊕ New</button>
+  <button class="btn danger" onclick="deleteCurrentStudy()" title="Delete current study" style="padding:4px 10px;">🗑</button>
+  <!-- Tab switcher -->
+  <div style="display:flex;gap:2px;background:var(--bg);border-radius:5px;padding:2px;margin-left:6px;">
+    <button id="tab-editor"  class="tab-btn active" onclick="switchTab('editor')">System</button>
+    <button id="tab-data"    class="tab-btn"        onclick="switchTab('data')">Data</button>
+    <button id="tab-library" class="tab-btn"        onclick="switchTab('library')">Library</button>
+    <button id="tab-results" class="tab-btn"        onclick="switchTab('results')">Results</button>
+  </div>
+  <div class="sep"></div>
+  <!-- Editor-only buttons -->
+  <div id="editor-btns" style="display:flex;gap:6px;align-items:center;">
+    <button class="btn" onclick="reloadStudy()" title="Reload from disk">↻ Reload</button>
+    <button class="btn" onclick="autoLayout()">⊞ Layout</button>
+  </div>
+  <div id="status-dot" title="Simulation idle"></div>
+  <button class="btn success" onclick="saveStudy()">💾 Save</button>
+  <button id="run-btn" class="btn primary" onclick="toggleSimulation()">▶ Run</button>
+</div>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<div id="main">
+
+  <!-- PALETTE -->
+  <div id="palette">
+    <h2>Model Library</h2>
+    <div id="model-list"></div>
+  </div>
+
+  <!-- CANVAS -->
+  <div id="canvas-wrap">
+    <div id="network"></div>
+    <div id="canvas-hint">Click component to inspect • Click palette item to add • Drag nodes to reposition</div>
+  </div>
+
+  <!-- PROPERTIES -->
+  <div id="properties">
+    <div id="props-header">
+      <div id="props-icon" class="model-icon" style="width:22px;height:22px;font-size:10px;">?</div>
+      <div id="props-title">Properties</div>
+    </div>
+    <div id="props-body">
+      <div id="props-placeholder">Select a component<br>to view its properties</div>
+    </div>
+    <div id="props-footer" style="display:none"></div>
+  </div>
+
+  <!-- ═══ RESULTS VIEW ═══ -->
+  <div id="results-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;">
+
+    <!-- Left sidebar: file list -->
+    <div id="results-sidebar">
+      <div style="padding:10px 12px 6px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);border-bottom:1px solid var(--border);">Run Files</div>
+      <div id="results-file-list" style="overflow-y:auto;flex:1;"></div>
+    </div>
+
+    <!-- Center: chart + controls -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+
+      <!-- Series selector bar -->
+      <div id="results-controls">
+        <select id="res-component" class="res-sel" onchange="onResComponentChange()">
+          <option value="">— component —</option>
+        </select>
+        <select id="res-output" class="res-sel">
+          <option value="">— variable —</option>
+        </select>
+        <select id="res-scenario" class="res-sel" style="width:90px;">
+          <option value="0">scenario 0</option>
+        </select>
+        <button class="btn" onclick="addSeries()" style="padding:4px 12px;">+ Add Series</button>
+        <div class="sep"></div>
+        <!-- Chart / Table toggle -->
+        <div class="view-toggle-bar">
+          <button id="res-vt-chart" class="vt-btn active" onclick="setResView('chart')">📊 Chart</button>
+          <button id="res-vt-table" class="vt-btn"        onclick="setResView('table')">📋 Table</button>
+        </div>
+        <button id="res-reset-zoom" class="btn" onclick="resetZoom()" style="padding:4px 10px;">⊙ Zoom</button>
+        <button class="btn" onclick="clearSeries()" style="padding:4px 10px;">✕ Clear</button>
+        <a id="res-download" class="btn" style="padding:4px 10px;text-decoration:none;" download>⬇ CSV</a>
+      </div>
+
+      <!-- Stats cards -->
+      <div id="res-stats-bar"></div>
+
+      <!-- Objective banner -->
+      <div id="res-objective" style="display:none;"></div>
+
+      <!-- Chart view -->
+      <div id="res-chart-view" style="flex:1;position:relative;padding:10px 14px 2px;display:flex;flex-direction:column;">
+        <canvas id="res-chart"></canvas>
+        <div id="res-no-data" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;pointer-events:none;background:transparent;">
+          Select a result file and variable to display
+        </div>
+      </div>
+      <div id="res-zoom-hint" style="padding:2px 14px 6px;font-size:10px;color:var(--muted);flex-shrink:0;">
+        🖱 Scroll to zoom &nbsp;•&nbsp; Drag to pan &nbsp;•&nbsp; Double-click to reset zoom
+      </div>
+
+      <!-- Table view -->
+      <div id="res-table-view" class="data-table-wrap" style="display:none;">
+        <div id="res-table-no-data" style="padding:30px;color:var(--muted);text-align:center;font-size:12px;">Add series to populate table</div>
+        <table id="res-table" class="data-tbl" style="display:none;"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ LIBRARY VIEW ═══ -->
+  <div id="library-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;">
+
+    <!-- Left: library file list -->
+    <div id="lib-sidebar">
+      <h2>Libraries</h2>
+      <div id="lib-file-list"></div>
+      <div style="padding:8px;flex-shrink:0;">
+        <button class="btn" onclick="newLibrary()" style="width:100%;padding:5px;">+ New Library</button>
+      </div>
+    </div>
+
+    <!-- Main editor -->
+    <div id="lib-editor-wrap">
+      <div id="lib-placeholder" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;">
+        Select or create a library
+      </div>
+
+      <!-- Library editor (hidden until file selected) -->
+      <div id="lib-editor" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+
+        <!-- Header bar: id, description, save -->
+        <div id="lib-header-bar">
+          <span style="font-size:11px;color:var(--muted);">Library ID:</span>
+          <input id="lib-id-input"   type="text" placeholder="library_id" oninput="libMarkDirty()">
+          <span style="font-size:11px;color:var(--muted);">Description:</span>
+          <input id="lib-desc-input" type="text" placeholder="(optional)" oninput="libMarkDirty()">
+          <span id="lib-dirty-badge">● unsaved</span>
+          <div class="sep"></div>
+          <button class="btn success" onclick="saveLibrary()" style="padding:4px 12px;">💾 Save Library</button>
+        </div>
+
+        <!-- Body: left panel (port types + models) + right panel (model editor) -->
+        <div id="lib-body">
+
+          <!-- Left panel -->
+          <div id="lib-left">
+            <!-- Port Types -->
+            <div class="lib-section-hdr"><span>Port Types</span><button onclick="startAddPortType()" title="Add port type">＋</button></div>
+            <div id="lib-port-list"></div>
+            <!-- Port type edit form -->
+            <div id="pt-edit-form" style="display:none;">
+              <label style="font-size:10px;color:var(--muted);">ID</label>
+              <input id="pt-id-input" type="text" placeholder="e.g. flow_port" oninput="libMarkDirty()">
+              <label style="font-size:10px;color:var(--muted);">Description</label>
+              <input id="pt-desc-input" type="text" placeholder="(optional)" oninput="libMarkDirty()">
+              <label style="font-size:10px;color:var(--muted);">Fields</label>
+              <div id="pt-fields-list"></div>
+              <button class="btn" style="width:100%;padding:3px;font-size:11px;margin-bottom:6px;" onclick="addPTField()">+ Field</button>
+              <div style="display:flex;gap:6px;">
+                <button class="btn primary" style="flex:1;padding:3px;" onclick="applyPortType()">Apply</button>
+                <button class="btn" style="padding:3px;" onclick="cancelPortType()">✕</button>
+              </div>
+            </div>
+
+            <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+              <!-- Models -->
+              <div class="lib-section-hdr"><span>Models</span><button onclick="startAddModel()" title="Add model">＋</button></div>
+              <div id="lib-model-list-inner"></div>
+            </div>
+          </div>
+
+          <!-- Right: model editor -->
+          <div id="lib-model-editor">
+            <div id="lib-model-editor-placeholder">Select a model to edit or add a new one</div>
+
+            <div id="lib-model-form">
+              <!-- Model header -->
+              <div id="lib-model-form-hdr">
+                <span style="font-size:11px;color:var(--muted);">ID:</span>
+                <input id="lib-model-id-input" type="text" placeholder="model_id" oninput="onModelHeaderInput()">
+                <span style="font-size:11px;color:var(--muted);">Desc:</span>
+                <input id="lib-model-desc-input" type="text" placeholder="(optional)" oninput="onModelHeaderInput()">
+              </div>
+
+              <!-- Section tabs -->
+              <div id="lib-model-tabs">
+                <button class="mst-btn active" onclick="setModelTab('parameters')">Parameters</button>
+                <button class="mst-btn" onclick="setModelTab('variables')">Variables</button>
+                <button class="mst-btn" onclick="setModelTab('ports')">Ports</button>
+                <button class="mst-btn" onclick="setModelTab('port-field-definitions')">Port Fields</button>
+                <button class="mst-btn" onclick="setModelTab('constraints')">Constraints</button>
+                <button class="mst-btn" onclick="setModelTab('binding-constraints')">Binding</button>
+                <button class="mst-btn" onclick="setModelTab('objective-contributions')">Objective</button>
+                <button class="mst-btn" onclick="setModelTab('extra-outputs')">Extras</button>
+              </div>
+              <div id="lib-model-tab-body"></div>
+            </div>
+          </div>
+
+        </div><!-- lib-body -->
+      </div><!-- lib-editor -->
+    </div><!-- lib-editor-wrap -->
+  </div><!-- library-view -->
+
+  <!-- ═══ DATA VIEW ═══ -->
+  <div id="data-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;">
+
+    <!-- Left sidebar: TS file list -->
+    <div id="data-sidebar">
+      <h2>Time Series</h2>
+      <div id="data-file-list"></div>
+      <div style="padding:8px;flex-shrink:0;border-top:1px solid var(--border);">
+        <button class="btn" onclick="openNewSeriesModal()" style="width:100%;padding:5px;font-size:11px;">+ New Series</button>
+      </div>
+    </div>
+
+    <!-- Main panel -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+
+      <!-- Toolbar -->
+      <div id="data-toolbar">
+        <span id="data-filename" style="color:var(--muted);">— select a file —</span>
+        <span id="data-dirty-badge">● unsaved</span>
+        <div class="sep"></div>
+        <div class="view-toggle-bar">
+          <button id="data-vt-chart" class="vt-btn active" onclick="setDataView('chart')">📊 Chart</button>
+          <button id="data-vt-table" class="vt-btn"        onclick="setDataView('table')">📋 Table</button>
+        </div>
+        <button class="btn success" id="data-save-btn" onclick="saveTimeSeries()" style="padding:4px 12px;" disabled>💾 Save</button>
+      </div>
+
+      <!-- Chart view -->
+      <div id="data-chart-view" style="flex:1;position:relative;padding:10px 14px 6px;">
+        <canvas id="data-chart"></canvas>
+        <div id="data-no-data" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;pointer-events:none;">
+          Select a time series file from the left panel
+        </div>
+      </div>
+
+      <!-- Table view -->
+      <div id="data-table-view" class="data-table-wrap" style="display:none;">
+        <table id="data-table" class="data-tbl"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONSOLE -->
+<div id="console-wrap">
+  <div id="console-header">
+    <span>Console</span>
+    <div class="sep"></div>
+    <button class="btn" style="padding:2px 8px;font-size:11px;" onclick="clearConsole()">Clear</button>
+  </div>
+  <div id="console-output"></div>
+</div>
+
+<!-- ADD COMPONENT MODAL -->
+<div id="add-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <div id="add-modal-icon" class="model-icon" style="width:22px;height:22px;font-size:10px;"></div>
+      <h3 id="add-modal-title">Add Component</h3>
+      <button onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-label">Component ID *</label>
+        <input id="add-id" class="form-input" type="text" placeholder="e.g. bus2, th4, wind_north…" autocomplete="off">
+        <div class="form-hint">Unique identifier in the system</div>
+      </div>
+      <div id="add-params-container"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeAddModal()">Cancel</button>
+      <button class="btn primary" onclick="confirmAdd()">Add Component</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD CONNECTION MODAL -->
+<div id="conn-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Connection</h3>
+      <button onclick="closeConnModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-label">From component</label>
+        <select id="conn-from" class="form-input" onchange="updatePortSelects()"></select>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Port</label>
+        <select id="conn-port1" class="form-input"></select>
+      </div>
+      <div class="form-row">
+        <label class="form-label">To component</label>
+        <select id="conn-to" class="form-input" onchange="updatePortSelects()"></select>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Port</label>
+        <select id="conn-port2" class="form-input"></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeConnModal()">Cancel</button>
+      <button class="btn primary" onclick="confirmConn()">Add Connection</button>
+    </div>
+  </div>
+</div>
+
+<!-- NEW DATA SERIES MODAL -->
+<div id="new-series-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>+ New Data Series</h3>
+      <button onclick="closeNewSeriesModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-label">Series name *</label>
+        <input id="ns-series-name" class="form-input" type="text" placeholder="e.g. wind_generation" autocomplete="off">
+        <div class="form-hint">Filename without .csv</div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Number of rows (time steps)</label>
+        <input id="ns-series-rows" class="form-input" type="number" value="168" min="1">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Number of scenarios (columns)</label>
+        <input id="ns-series-cols" class="form-input" type="number" value="1" min="1">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Fill value</label>
+        <input id="ns-series-fill" class="form-input" type="number" value="0" step="any">
+        <div class="form-hint">Initial value for all cells</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeNewSeriesModal()">Cancel</button>
+      <button class="btn primary" onclick="confirmNewSeries()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIBRARY ITEM EDIT MODAL -->
+<div id="lib-item-modal" class="modal-backdrop" style="display:none">
+  <div class="modal" style="width:520px;">
+    <div class="modal-header">
+      <h3 id="lib-item-modal-title">Edit Item</h3>
+      <button onclick="closeLibItemModal()">✕</button>
+    </div>
+    <div class="modal-body" id="lib-item-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeLibItemModal()">Cancel</button>
+      <button class="btn primary" id="lib-item-modal-apply" onclick="libApplyModal()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- NEW STUDY MODAL -->
+<div id="new-study-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>⊕ New Study</h3>
+      <button onclick="closeNewStudyModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-label">Study name *</label>
+        <input id="ns-name" class="form-input" type="text" placeholder="e.g. My-New-Study" autocomplete="off">
+        <div class="form-hint">Used as the folder name. Letters, digits, spaces, hyphens and underscores allowed.</div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Solver</label>
+        <select id="ns-solver" class="form-input">
+          <option value="coin">coin (CBC)</option>
+          <option value="highs">HiGHS</option>
+          <option value="sirius">Sirius</option>
+          <option value="glpk">GLPK</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Time steps</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="ns-first" class="form-input" type="number" value="0" min="0" style="width:90px;" placeholder="first">
+          <span style="color:var(--muted);font-size:11px;">to</span>
+          <input id="ns-last"  class="form-input" type="number" value="167" min="0" style="width:90px;" placeholder="last">
+          <span style="color:var(--muted);font-size:11px;">(168 steps = 1 week)</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeNewStudyModal()">Cancel</button>
+      <button class="btn primary" onclick="confirmNewStudy()">Create Study</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════
+let network, nodesDS, edgesDS;
+let currentStudy = 'GEMS-Thermal-Test2';
+let modelsData    = null;   // parsed antares_legacy_models.yml
+let systemData    = null;   // parsed system.yml
+let layoutData    = {};
+let dataSeries    = [];
+let paramsData    = {};
+let selectedNodeId = null;
+
+// pending add
+let pendingModelType = null;
+let pendingModelDef  = null;
+
+// ══════════════════════════════════════════════
+//  MODEL VISUAL STYLES
+// ══════════════════════════════════════════════
+const MODEL_STYLE = {
+  'area':               { shape: 'ellipse',  bg: '#1a3a5c', border: '#4a9eff', icon: '⬡', cls: 'type-area',     label: 'Area / Bus' },
+  'load':               { shape: 'triangle', bg: '#3d1a1a', border: '#f85149', icon: '▼', cls: 'type-load',     label: 'Load' },
+  'thermal':            { shape: 'box',      bg: '#3d2a10', border: '#f0883e', icon: '⚙', cls: 'type-thermal',  label: 'Thermal' },
+  'renewable':          { shape: 'diamond',  bg: '#102a1a', border: '#3fb950', icon: '♻', cls: 'type-renewable',label: 'Renewable' },
+  'link':               { shape: 'dot',      bg: '#2a1a3d', border: '#bc8cff', icon: '↔', cls: 'type-link',     label: 'Link / Line' },
+  'short-term-storage': { shape: 'database', bg: '#0f2a2c', border: '#39c5cf', icon: '▦', cls: 'type-short-term-storage', label: 'Storage' },
+};
+
+// Fallback pool for custom model types (deterministic by model id hash)
+const FALLBACK_STYLES = [
+  { shape: 'box',      bg: '#1a2a3a', border: '#58a6ff', icon: '▣', cls: '' },
+  { shape: 'diamond',  bg: '#2a1a3a', border: '#bc8cff', icon: '◆', cls: '' },
+  { shape: 'ellipse',  bg: '#1a3a2a', border: '#3fb950', icon: '◎', cls: '' },
+  { shape: 'dot',      bg: '#3a2a1a', border: '#f0883e', icon: '●', cls: '' },
+  { shape: 'database', bg: '#1a3a3a', border: '#39c5cf', icon: '▤', cls: '' },
+  { shape: 'triangle', bg: '#3a1a1a', border: '#f85149', icon: '▲', cls: '' },
+  { shape: 'box',      bg: '#2a3a1a', border: '#e3b341', icon: '⬛', cls: '' },
+  { shape: 'diamond',  bg: '#3a1a2a', border: '#ff7b72', icon: '◇', cls: '' },
+];
+
+function strHash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function styleOf(type) {
+  if (MODEL_STYLE[type]) return MODEL_STYLE[type];
+  // Keyword inference
+  const t = type.toLowerCase();
+  if (t.includes('thermal') || t.includes('generator') || t.includes('plant') || t.includes('gas') || t.includes('coal') || t.includes('nuclear'))
+    return { ...MODEL_STYLE['thermal'], label: type };
+  if (t.includes('load') || t.includes('demand') || t.includes('consumption'))
+    return { ...MODEL_STYLE['load'], label: type };
+  if (t.includes('wind') || t.includes('solar') || t.includes('pv') || t.includes('renew') || t.includes('hydro'))
+    return { ...MODEL_STYLE['renewable'], label: type };
+  if (t.includes('storage') || t.includes('battery') || t.includes('reservoir'))
+    return { ...MODEL_STYLE['short-term-storage'], label: type };
+  if (t.includes('link') || t.includes('line') || t.includes('cable') || t.includes('connect') || t.includes('transmit'))
+    return { ...MODEL_STYLE['link'], label: type };
+  if (t.includes('bus') || t.includes('area') || t.includes('node') || t.includes('hub'))
+    return { ...MODEL_STYLE['area'], label: type };
+  // Deterministic fallback from pool
+  const fb = FALLBACK_STYLES[strHash(type) % FALLBACK_STYLES.length];
+  return { ...fb, label: type };
+}
+
+function visNode(comp, type, pos) {
+  const s = styleOf(type);
+  return {
+    id:    comp.id,
+    label: comp.id,
+    title: `${comp.id} [${type}]`,
+    shape: s.shape,
+    color: { background: s.bg, border: s.border, highlight: { background: s.bg, border: '#fff' }, hover: { background: s.bg, border: s.border } },
+    font:  { color: '#c9d1d9', size: 12, face: 'Consolas, monospace' },
+    borderWidth: 2,
+    borderWidthSelected: 3,
+    size: (s.shape === 'ellipse') ? 35 : 22,
+    x: pos ? pos.x : undefined,
+    y: pos ? pos.y : undefined,
+    _type: type,
+  };
+}
+
+function visEdge(conn, idx) {
+  return {
+    id:    `e${idx}`,
+    from:  conn.component1,
+    to:    conn.component2,
+    label: `${conn.port1}↔${conn.port2}`,
+    color: { color: '#30363d', highlight: '#58a6ff', hover: '#58a6ff' },
+    font:  { color: '#8b949e', size: 9, align: 'middle', strokeWidth: 0 },
+    width: 1.5,
+    smooth: { type: 'curvedCW', roundness: 0.1 },
+    _port1: conn.port1,
+    _port2: conn.port2,
+  };
+}
+
+// ══════════════════════════════════════════════
+//  CHART RESIZE HELPERS
+// ══════════════════════════════════════════════
+// Double rAF ensures browser has finished layout before Chart.js measures the canvas
+function safeResize(chart) {
+  if (!chart) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (chart) chart.resize(); }));
+}
+
+function attachResizeObserver(chart, container) {
+  if (!window.ResizeObserver || !container) return null;
+  const obs = new ResizeObserver(() => { if (chart) chart.resize(); });
+  obs.observe(container);
+  return obs;
+}
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  initSocket();
+  loadStudiesList();
+  loadStudy(currentStudy);
+});
+
+// ══════════════════════════════════════════════
+//  SOCKET.IO
+// ══════════════════════════════════════════════
+function initSocket() {
+  const socket = io();
+  socket.on('sim_start',  d => log(`▶ Simulation started: ${d.study}`, 'head'));
+  socket.on('sim_output', d => log(d.line, classifyLine(d.line)));
+  socket.on('sim_end',    d => {
+    log(d.success ? `✔ ${d.message}` : `✘ ${d.message}`, d.success ? 'ok' : 'err');
+    setRunning(false);
+  });
+  socket.on('sim_error',  d => { log(`✘ Error: ${d.error}`, 'err'); setRunning(false); });
+}
+
+function classifyLine(line) {
+  if (!line) return 'info';
+  const l = line.toLowerCase();
+  if (l.includes('error') || l.includes('fail') || l.includes('critical')) return 'err';
+  if (l.includes('warn')) return 'warn';
+  if (l.includes('success') || l.includes('done') || l.includes('ok')) return 'ok';
+  return 'info';
+}
+
+// ══════════════════════════════════════════════
+//  STUDY MANAGEMENT
+// ══════════════════════════════════════════════
+async function loadStudiesList() {
+  const res  = await fetch('/api/studies');
+  const list = await res.json();
+  const sel  = document.getElementById('study-select');
+  sel.innerHTML = list.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  sel.value = currentStudy;
+}
+
+async function loadStudy(studyId) {
+  currentStudy = studyId;
+  log(`Loading study: ${studyId}`, 'head');
+
+  const [mRes, sRes] = await Promise.all([
+    fetch(`/api/models?study=${studyId}`),
+    fetch(`/api/system?study=${studyId}`),
+  ]);
+  modelsData = await mRes.json();
+  const sData = await sRes.json();
+  systemData = sData.system;
+  layoutData = sData.layout || {};
+  dataSeries = sData.data_series || [];
+  paramsData = sData.params || {};
+
+  // Reset per-tab state
+  activeDataFile = null; dataRows = []; dataDirty = false;
+  if (dataChart) { if (dataChart._obs) dataChart._obs.disconnect(); dataChart.destroy(); dataChart = null; }
+  document.getElementById('data-file-list').innerHTML = '';
+  document.getElementById('data-filename').textContent = '— select a file —';
+  document.getElementById('data-filename').style.color = 'var(--muted)';
+  document.getElementById('data-dirty-badge').style.display = 'none';
+  document.getElementById('data-no-data').style.display = 'flex';
+
+  resActiveFile = null; resMeta = null;
+  clearChart();
+  document.getElementById('results-file-list').innerHTML = '';
+
+  libActiveFile = null; libCurrentData = null; libDirty = false; libCurrentModelId = null;
+  document.getElementById('lib-file-list').innerHTML = '';
+  document.getElementById('lib-placeholder').style.display = 'flex';
+  document.getElementById('lib-editor').style.display = 'none';
+
+  buildPalette();
+  buildNetwork();
+  showPlaceholder();
+  log(`Study loaded. Components: ${systemData.system.components.length}, Connections: ${(systemData.system.connections || []).length}`, 'ok');
+
+  // Refresh whatever tab is currently open
+  if (currentTab === 'data')    loadDataFiles();
+  if (currentTab === 'results') loadResultFiles();
+  if (currentTab === 'library') loadLibraryFiles();
+}
+
+function reloadStudy() { loadStudy(currentStudy); }
+
+// ══════════════════════════════════════════════
+//  PALETTE
+// ══════════════════════════════════════════════
+function buildPalette() {
+  if (!modelsData || !modelsData.library) return;
+  const models = modelsData.library.models || [];
+  const el = document.getElementById('model-list');
+
+  el.innerHTML = models.map(m => {
+    const s = styleOf(m.id);
+    return `
+      <div class="model-item" onclick="openAddModal('${m.id}')" title="Click to add a ${m.id} component">
+        <div class="model-icon ${s.cls}">${s.icon}</div>
+        <div>
+          <div class="model-label">${s.label || m.id}</div>
+          <div class="model-desc">${m.id}</div>
+        </div>
+      </div>`;
+  }).join('<div class="palette-sep"></div>');
+}
+
+// ══════════════════════════════════════════════
+//  NETWORK
+// ══════════════════════════════════════════════
+function buildNetwork() {
+  const components  = systemData.system.components  || [];
+  const connections = systemData.system.connections || [];
+
+  const nodes = components.map(c => {
+    const type = (c.model || '').split('.').pop();
+    const pos  = layoutData[c.id];
+    return visNode(c, type, pos);
+  });
+
+  const edges = connections.map((conn, i) => visEdge(conn, i));
+
+  if (network) {
+    nodesDS.clear();
+    edgesDS.clear();
+    nodesDS.add(nodes);
+    edgesDS.add(edges);
+    return;
+  }
+
+  nodesDS = new vis.DataSet(nodes);
+  edgesDS = new vis.DataSet(edges);
+
+  network = new vis.Network(
+    document.getElementById('network'),
+    { nodes: nodesDS, edges: edgesDS },
+    {
+      physics: {
+        enabled: true,
+        barnesHut: { gravitationalConstant: -5000, springLength: 150, springConstant: 0.04 },
+        stabilization: { iterations: 200, fit: true },
+      },
+      interaction: { hover: true, tooltipDelay: 300, multiselect: false },
+      edges: { smooth: { type: 'curvedCW', roundness: 0.1 } },
+    }
+  );
+
+  network.on('stabilizationIterationsDone', () => network.setOptions({ physics: { enabled: false } }));
+
+  network.on('click', params => {
+    if (params.nodes.length === 1) selectNode(params.nodes[0]);
+    else if (params.nodes.length === 0) showPlaceholder();
+  });
+
+  network.on('dragEnd', params => {
+    if (params.nodes.length) {
+      params.nodes.forEach(id => {
+        const pos = network.getPosition(id);
+        layoutData[id] = { x: Math.round(pos.x), y: Math.round(pos.y) };
+      });
+    }
+  });
+
+  network.on('oncontext', params => {
+    params.event.preventDefault();
+    if (params.nodes.length === 1) {
+      const id = params.nodes[0];
+      if (confirm(`Delete component "${id}"?`)) deleteNode(id);
+    } else if (params.edges.length === 1) {
+      const eid = params.edges[0];
+      if (confirm('Delete this connection?')) deleteEdge(eid);
+    }
+  });
+}
+
+function autoLayout() {
+  if (!network) return;
+  network.setOptions({ physics: { enabled: true } });
+  setTimeout(() => network.setOptions({ physics: { enabled: false } }), 3000);
+}
+
+// ══════════════════════════════════════════════
+//  NODE SELECTION / PROPERTIES
+// ══════════════════════════════════════════════
+function showPlaceholder() {
+  selectedNodeId = null;
+  document.getElementById('props-title').textContent = 'Study Parameters';
+  document.getElementById('props-icon').textContent = '⚙';
+  document.getElementById('props-icon').className   = 'model-icon';
+  document.getElementById('props-footer').style.display = 'none';
+  renderParamsPanel();
+}
+
+function renderParamsPanel() {
+  const p = paramsData;
+  document.getElementById('props-body').innerHTML = `
+    <div class="prop-section">
+      <div class="prop-section-title">Solver</div>
+      <div class="prop-row">
+        <div class="prop-label">Solver</div>
+        <select class="prop-input" onchange="setParam2('solver',this.value)">
+          <option value="coin"  ${(p.solver||'coin')==='coin'  ?'selected':''}>coin (CBC)</option>
+          <option value="highs" ${p.solver==='highs' ?'selected':''}>HiGHS</option>
+          <option value="sirius"${p.solver==='sirius'?'selected':''}>Sirius</option>
+          <option value="glpk"  ${p.solver==='glpk'  ?'selected':''}>GLPK</option>
+        </select>
+      </div>
+      <div class="prop-row">
+        <div class="prop-label">Solver parameters</div>
+        <input class="prop-input" type="text" value="${p['solver-parameters']||''}" placeholder="e.g. THREADS 1"
+          onchange="setParam2('solver-parameters',this.value)">
+      </div>
+      <div class="prop-row">
+        <div class="prop-label">Solver logs</div>
+        <select class="prop-input" onchange="setParam2('solver-logs',this.value==='true')">
+          <option value="false" ${!p['solver-logs']?'selected':''}>Off</option>
+          <option value="true"  ${ p['solver-logs']?'selected':''}>On</option>
+        </select>
+      </div>
+    </div>
+    <div class="prop-section">
+      <div class="prop-section-title">Time Range</div>
+      <div class="prop-row">
+        <div class="prop-label">First time step</div>
+        <input class="prop-input" type="number" value="${p['first-time-step']??0}"
+          onchange="setParam2('first-time-step',parseInt(this.value))">
+      </div>
+      <div class="prop-row">
+        <div class="prop-label">Last time step</div>
+        <input class="prop-input" type="number" value="${p['last-time-step']??167}"
+          onchange="setParam2('last-time-step',parseInt(this.value))">
+      </div>
+      <div class="prop-row">
+        <div class="prop-label">No output</div>
+        <select class="prop-input" onchange="setParam2('no-output',this.value==='true')">
+          <option value="false" ${!p['no-output']?'selected':''}>Off (write results)</option>
+          <option value="true"  ${ p['no-output']?'selected':''}>On (skip results)</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:4px;">
+      <button class="btn success" onclick="saveStudy()" style="width:100%;padding:5px;">💾 Save Study</button>
+    </div>`;
+}
+
+function setParam2(key, value) {
+  paramsData[key] = value;
+}
+
+function selectNode(id) {
+  selectedNodeId = id;
+  const comp = findComponent(id);
+  if (!comp) return;
+
+  const type = (comp.model || '').split('.').pop();
+  const s    = styleOf(type);
+  const modelDef = findModelDef(type);
+
+  document.getElementById('props-title').textContent = id;
+  const icon = document.getElementById('props-icon');
+  icon.textContent = s.icon;
+  icon.className   = `model-icon ${s.cls}`;
+  icon.style.cssText = 'width:22px;height:22px;font-size:12px;';
+
+  const params   = comp.parameters || [];
+  const conns    = getConnectionsFor(id);
+  const paramMap = Object.fromEntries(params.map(p => [p.id, p]));
+
+  let html = '';
+
+  // Solver / network info (top)
+  html += `<div class="prop-section">
+    <div class="prop-section-title">Component</div>
+    <div class="prop-row">
+      <div class="prop-label">ID</div>
+      <input class="prop-input" id="prop-comp-id" value="${id}" onchange="renameComponent(this.value)">
+    </div>
+    <div class="prop-row">
+      <div class="prop-label">Model</div>
+      <input class="prop-input" value="${comp.model || ''}" readonly style="color:var(--muted)">
+    </div>
+  </div>`;
+
+  // Parameters
+  if (modelDef && modelDef.parameters && modelDef.parameters.length) {
+    html += `<div class="prop-section"><div class="prop-section-title">Parameters</div>`;
+    for (const pd of modelDef.parameters) {
+      const cur = paramMap[pd.id];
+      const val = cur ? cur.value : '';
+      const isTD = pd['time-dependent'];
+      const isSD = pd['scenario-dependent'];
+      const badges = [isTD ? 'T' : '', isSD ? 'S' : ''].filter(Boolean).map(b => `<span class="badge">${b}</span>`).join(' ');
+      html += `<div class="prop-row">
+        <div class="prop-label">${pd.id} ${badges}</div>`;
+      if (isTD || isSD) {
+        html += `<select class="prop-input" onchange="setParam('${id}','${pd.id}',this.value,'${isTD}','${isSD}')">
+          <option value="">— select series —</option>
+          ${dataSeries.map(ds => `<option value="${ds}" ${val===ds?'selected':''}>${ds}</option>`).join('')}
+          <option value="${val}" ${!dataSeries.includes(val)?'selected':''} style="display:${!dataSeries.includes(val)&&val?'':'none'}">${val}</option>
+        </select>`;
+      } else {
+        html += `<input class="prop-input" type="text" value="${val}" onchange="setParam('${id}','${pd.id}',this.value,'${isTD}','${isSD}')">`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Connections
+  html += `<div class="prop-section"><div class="prop-section-title">Connections (${conns.length})</div>`;
+  if (conns.length === 0) {
+    html += `<div style="color:var(--muted);font-size:11px;">No connections</div>`;
+  }
+  for (const c of conns) {
+    const other = (c.component1 === id) ? c.component2 : c.component1;
+    const myPort = (c.component1 === id) ? c.port1 : c.port2;
+    const otherPort = (c.component1 === id) ? c.port2 : c.port1;
+    html += `<div class="conn-chip">
+      <span style="color:var(--accent);">${myPort}</span>
+      <span style="color:var(--muted)">↔</span>
+      <span><b>${other}</b>.${otherPort}</span>
+      <button onclick="removeConnection('${id}','${other}','${myPort}','${otherPort}')" title="Remove">✕</button>
+    </div>`;
+  }
+  html += `</div>`;
+
+  document.getElementById('props-body').innerHTML = html;
+
+  const footer = document.getElementById('props-footer');
+  footer.style.display = 'flex';
+  footer.innerHTML = `
+    <button class="btn" onclick="openConnModal('${id}')">+ Connect</button>
+    <div style="flex:1"></div>
+    <button class="btn danger" onclick="deleteNode('${id}')">🗑 Delete</button>`;
+}
+
+// ══════════════════════════════════════════════
+//  HELPERS – find / mutate system data
+// ══════════════════════════════════════════════
+function findComponent(id) {
+  return (systemData.system.components || []).find(c => c.id === id);
+}
+
+function findModelDef(type) {
+  return (modelsData.library.models || []).find(m => m.id === type);
+}
+
+function getConnectionsFor(id) {
+  return (systemData.system.connections || []).filter(c => c.component1 === id || c.component2 === id);
+}
+
+function setParam(compId, paramId, value, isTD, isSD) {
+  const comp = findComponent(compId);
+  if (!comp) return;
+  if (!comp.parameters) comp.parameters = [];
+  let p = comp.parameters.find(x => x.id === paramId);
+  if (!p) { p = { id: paramId }; comp.parameters.push(p); }
+  p['time-dependent']     = isTD === 'true';
+  p['scenario-dependent'] = isSD === 'true';
+  p.value = (isTD === 'true' || isSD === 'true') ? value : isNaN(value) ? value : Number(value);
+}
+
+function renameComponent(newId) {
+  if (!newId || newId === selectedNodeId) return;
+  if (findComponent(newId)) { alert(`ID "${newId}" already exists`); return; }
+  const comp = findComponent(selectedNodeId);
+  if (!comp) return;
+  const conns = systemData.system.connections || [];
+  conns.forEach(c => {
+    if (c.component1 === selectedNodeId) c.component1 = newId;
+    if (c.component2 === selectedNodeId) c.component2 = newId;
+  });
+  if (layoutData[selectedNodeId]) { layoutData[newId] = layoutData[selectedNodeId]; delete layoutData[selectedNodeId]; }
+  comp.id = newId;
+  const nd = nodesDS.get(selectedNodeId);
+  if (nd) { nodesDS.remove(selectedNodeId); nd.id = newId; nd.label = newId; nodesDS.add(nd); }
+  edgesDS.get({ filter: e => e.from === selectedNodeId || e.to === selectedNodeId }).forEach(e => {
+    const upd = { id: e.id };
+    if (e.from === selectedNodeId) upd.from = newId;
+    if (e.to   === selectedNodeId) upd.to   = newId;
+    edgesDS.update(upd);
+  });
+  selectedNodeId = newId;
+  log(`Renamed to ${newId}`, 'info');
+}
+
+function removeConnection(c1, c2, p1, p2) {
+  const conns = systemData.system.connections || [];
+  const idx = conns.findIndex(c =>
+    (c.component1 === c1 && c.component2 === c2 && c.port1 === p1 && c.port2 === p2) ||
+    (c.component1 === c2 && c.component2 === c1 && c.port1 === p2 && c.port2 === p1)
+  );
+  if (idx !== -1) {
+    conns.splice(idx, 1);
+    rebuildEdges();
+    selectNode(selectedNodeId);
+    log(`Connection removed: ${c1}↔${c2}`, 'info');
+  }
+}
+
+function deleteNode(id) {
+  if (!confirm(`Delete component "${id}"?`)) return;
+  systemData.system.components = (systemData.system.components || []).filter(c => c.id !== id);
+  systemData.system.connections = (systemData.system.connections || []).filter(c => c.component1 !== id && c.component2 !== id);
+  nodesDS.remove(id);
+  rebuildEdges();
+  delete layoutData[id];
+  showPlaceholder();
+  log(`Deleted: ${id}`, 'warn');
+}
+
+function deleteEdge(eid) {
+  const edge = edgesDS.get(eid);
+  if (!edge) return;
+  const conns = systemData.system.connections || [];
+  const idx = conns.findIndex(c => c.component1 === edge.from && c.component2 === edge.to && c.port1 === edge._port1 && c.port2 === edge._port2);
+  if (idx !== -1) conns.splice(idx, 1);
+  edgesDS.remove(eid);
+}
+
+function rebuildEdges() {
+  edgesDS.clear();
+  (systemData.system.connections || []).forEach((conn, i) => edgesDS.add(visEdge(conn, i)));
+}
+
+// ══════════════════════════════════════════════
+//  ADD COMPONENT MODAL
+// ══════════════════════════════════════════════
+function openAddModal(modelType) {
+  pendingModelType = modelType;
+  pendingModelDef  = findModelDef(modelType);
+  const s = styleOf(modelType);
+
+  document.getElementById('add-modal-title').textContent = `Add ${s.label || modelType}`;
+  document.getElementById('add-modal-icon').textContent  = s.icon;
+  document.getElementById('add-modal-icon').className    = `model-icon ${s.cls}`;
+  document.getElementById('add-modal-icon').style.cssText = 'width:22px;height:22px;font-size:12px;';
+  document.getElementById('add-id').value = '';
+
+  const container = document.getElementById('add-params-container');
+  if (pendingModelDef && pendingModelDef.parameters && pendingModelDef.parameters.length) {
+    let html = `<div class="form-row" style="margin-top:8px;"><div class="form-label" style="color:var(--muted);font-size:10px;text-transform:uppercase;">Parameters</div></div>`;
+    for (const p of pendingModelDef.parameters) {
+      const isTD = p['time-dependent'];
+      const isSD = p['scenario-dependent'];
+      const badges = [isTD ? '[T]' : '', isSD ? '[S]' : ''].filter(Boolean).join(' ');
+      html += `<div class="form-row">
+        <label class="form-label">${p.id} <span style="color:var(--muted)">${badges}</span></label>`;
+      if (isTD || isSD) {
+        html += `<select class="form-input" id="add-p-${p.id}">
+          <option value="">— select data series —</option>
+          ${dataSeries.map(ds => `<option value="${ds}">${ds}</option>`).join('')}
+        </select>`;
+      } else {
+        html += `<input class="form-input" id="add-p-${p.id}" type="text" placeholder="numeric value">`;
+      }
+      html += `</div>`;
+    }
+    container.innerHTML = html;
+  } else {
+    container.innerHTML = '';
+  }
+
+  document.getElementById('add-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('add-id').focus(), 50);
+}
+
+function closeAddModal() {
+  document.getElementById('add-modal').style.display = 'none';
+}
+
+function confirmAdd() {
+  const id = document.getElementById('add-id').value.trim();
+  if (!id) { alert('Please enter a component ID'); return; }
+  if (findComponent(id)) { alert(`Component "${id}" already exists`); return; }
+
+  const modelDef = pendingModelDef;
+  const params   = [];
+
+  if (modelDef && modelDef.parameters) {
+    for (const p of modelDef.parameters) {
+      const el = document.getElementById(`add-p-${p.id}`);
+      if (!el) continue;
+      const val = el.value;
+      if (val === '') continue;
+      const isTD = !!p['time-dependent'];
+      const isSD = !!p['scenario-dependent'];
+      params.push({
+        id: p.id,
+        'time-dependent': isTD,
+        'scenario-dependent': isSD,
+        value: (isTD || isSD) ? val : isNaN(val) ? val : Number(val),
+      });
+    }
+  }
+
+  const comp = {
+    id,
+    model: `antares_legacy_models.${pendingModelType}`,
+    parameters: params,
+  };
+  systemData.system.components.push(comp);
+
+  // Determine default position (center + offset)
+  let x = 0, y = 0;
+  if (network) {
+    const view = network.getViewPosition();
+    x = view.x + (Math.random() - 0.5) * 200;
+    y = view.y + (Math.random() - 0.5) * 200;
+  }
+  layoutData[id] = { x: Math.round(x), y: Math.round(y) };
+
+  nodesDS.add(visNode(comp, pendingModelType, layoutData[id]));
+  closeAddModal();
+  log(`Added component: ${id} [${pendingModelType}]`, 'ok');
+  selectNode(id);
+}
+
+// ══════════════════════════════════════════════
+//  ADD CONNECTION MODAL
+// ══════════════════════════════════════════════
+function openConnModal(preselect) {
+  const comps = systemData.system.components || [];
+  const fromSel = document.getElementById('conn-from');
+  const toSel   = document.getElementById('conn-to');
+  fromSel.innerHTML = comps.map(c => `<option value="${c.id}" ${c.id===preselect?'selected':''}>${c.id}</option>`).join('');
+  toSel.innerHTML   = comps.map(c => `<option value="${c.id}">${c.id}</option>`).join('');
+  updatePortSelects();
+  document.getElementById('conn-modal').style.display = 'flex';
+}
+
+function closeConnModal() {
+  document.getElementById('conn-modal').style.display = 'none';
+}
+
+function updatePortSelects() {
+  const fromId = document.getElementById('conn-from').value;
+  const toId   = document.getElementById('conn-to').value;
+  const fill = (selId, compId) => {
+    const comp = findComponent(compId);
+    const type = comp ? (comp.model || '').split('.').pop() : '';
+    const def  = findModelDef(type);
+    const ports = def && def.ports ? def.ports.map(p => p.id) : ['balance_port'];
+    document.getElementById(selId).innerHTML = ports.map(p => `<option value="${p}">${p}</option>`).join('');
+  };
+  fill('conn-port1', fromId);
+  fill('conn-port2', toId);
+}
+
+function confirmConn() {
+  const c1 = document.getElementById('conn-from').value;
+  const c2 = document.getElementById('conn-to').value;
+  const p1 = document.getElementById('conn-port1').value;
+  const p2 = document.getElementById('conn-port2').value;
+  if (c1 === c2) { alert('Cannot connect a component to itself'); return; }
+
+  const conns = systemData.system.connections;
+  conns.push({ component1: c1, port1: p1, component2: c2, port2: p2 });
+  rebuildEdges();
+  closeConnModal();
+  if (selectedNodeId) selectNode(selectedNodeId);
+  log(`Connected: ${c1}.${p1} ↔ ${c2}.${p2}`, 'ok');
+}
+
+// ══════════════════════════════════════════════
+//  SAVE
+// ══════════════════════════════════════════════
+async function saveStudy() {
+  // Collect current node positions
+  if (network) {
+    nodesDS.getIds().forEach(id => {
+      const pos = network.getPosition(id);
+      layoutData[id] = { x: Math.round(pos.x), y: Math.round(pos.y) };
+    });
+  }
+
+  const payload = {
+    study:  currentStudy,
+    system: systemData,
+    layout: layoutData,
+    params: paramsData,
+  };
+
+  log('Saving…', 'info');
+  const res = await fetch('/api/system', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (data.status === 'ok') log('Saved successfully ✔', 'ok');
+  else log(`Save error: ${JSON.stringify(data)}`, 'err');
+}
+
+// ══════════════════════════════════════════════
+//  SIMULATION
+// ══════════════════════════════════════════════
+let simRunning = false;
+
+function setRunning(on) {
+  simRunning = on;
+  const btn = document.getElementById('run-btn');
+  const dot = document.getElementById('status-dot');
+  btn.textContent = on ? '■ Stop' : '▶ Run';
+  btn.className   = on ? 'btn running' : 'btn primary';
+  dot.className   = on ? 'status-dot running' : 'status-dot';
+  dot.title       = on ? 'Simulation running' : 'Simulation idle';
+}
+
+async function toggleSimulation() {
+  if (simRunning) {
+    await fetch('/api/simulate/stop', { method: 'POST' });
+    log('Stop requested', 'warn');
+  } else {
+    setRunning(true);
+    const res = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ study: currentStudy }),
+    });
+    const data = await res.json();
+    if (data.error) { log(`✘ ${data.error}`, 'err'); setRunning(false); }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  CONSOLE
+// ══════════════════════════════════════════════
+function log(msg, cls = 'info') {
+  if (!msg && msg !== 0) return;
+  const out  = document.getElementById('console-output');
+  const line = document.createElement('div');
+  line.className = `log-${cls}`;
+  const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  line.textContent = `[${time}] ${msg}`;
+  out.appendChild(line);
+  out.scrollTop = out.scrollHeight;
+}
+
+function clearConsole() {
+  document.getElementById('console-output').innerHTML = '';
+}
+
+// ── keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'Delete' && selectedNodeId && !['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)) {
+    deleteNode(selectedNodeId);
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveStudy(); }
+});
+
+// ══════════════════════════════════════════════
+//  TAB SWITCHING
+// ══════════════════════════════════════════════
+let currentTab = 'editor';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-editor').classList.toggle('active',  tab === 'editor');
+  document.getElementById('tab-results').classList.toggle('active', tab === 'results');
+
+  // Editor elements
+  const editorEls = ['palette', 'canvas-wrap', 'properties', 'editor-btns'];
+  editorEls.forEach(id => document.getElementById(id).style.display = tab === 'editor' ? '' : 'none');
+
+  // Results view
+  const rv = document.getElementById('results-view');
+  rv.style.display = tab === 'results' ? 'flex' : 'none';
+
+  if (tab === 'results') {
+    loadResultFiles();
+    safeResize(resChart);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  RESULTS
+// ══════════════════════════════════════════════
+let resChart      = null;
+let resMeta       = null;
+let resActiveFile = null;
+
+// Palette of colors for chart series
+const CHART_COLORS = ['#58a6ff','#3fb950','#f0883e','#f85149','#bc8cff','#39c5cf','#e3b341','#ff7b72'];
+let colorIdx = 0;
+function nextColor() { return CHART_COLORS[colorIdx++ % CHART_COLORS.length]; }
+
+async function loadResultFiles() {
+  const res   = await fetch(`/api/results?study=${currentStudy}`);
+  const files = await res.json();
+  const list  = document.getElementById('results-file-list');
+
+  if (!files.length) {
+    list.innerHTML = `<div style="padding:14px 12px;color:var(--muted);font-size:11px;">No simulation results found.<br>Run a simulation first.</div>`;
+    return;
+  }
+
+  list.innerHTML = files.map(f => `
+    <div class="res-file-item" onclick="selectResultFile('${f}')" id="rfile-${CSS.escape(f)}"
+         title="${f}">${f.replace('simulation_table--','').replace('.csv','')}</div>
+  `).join('');
+
+  // Auto-select newest
+  if (!resActiveFile) selectResultFile(files[0]);
+}
+
+async function selectResultFile(filename) {
+  resActiveFile = filename;
+
+  // Highlight
+  document.querySelectorAll('.res-file-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`rfile-${CSS.escape(filename)}`);
+  if (el) el.classList.add('active');
+
+  // Load meta
+  const res = await fetch(`/api/results/meta?study=${currentStudy}&file=${encodeURIComponent(filename)}`);
+  resMeta = await res.json();
+
+  // Objective
+  const objEl = document.getElementById('res-objective');
+  if (resMeta.objective != null) {
+    objEl.style.display = 'block';
+    objEl.innerHTML = `<b style="color:var(--green)">Objective value:</b> ${resMeta.objective.toLocaleString('en-US', {maximumFractionDigits: 2})}`;
+  } else {
+    objEl.style.display = 'none';
+  }
+
+  // Populate component selector
+  const compSel = document.getElementById('res-component');
+  compSel.innerHTML = `<option value="">— component —</option>` +
+    Object.keys(resMeta.components).map(c => `<option value="${c}">${c}</option>`).join('');
+
+  document.getElementById('res-output').innerHTML = `<option value="">— variable —</option>`;
+
+  // Scenarios
+  const scenSel = document.getElementById('res-scenario');
+  scenSel.innerHTML = resMeta.scenarios.map(s => `<option value="${s}">scenario ${s}</option>`).join('');
+
+  // Download link
+  document.getElementById('res-download').href = `/api/results/download?study=${currentStudy}&file=${encodeURIComponent(filename)}`;
+  document.getElementById('res-download').setAttribute('download', filename);
+
+  clearChart();
+}
+
+function onResComponentChange() {
+  const comp    = document.getElementById('res-component').value;
+  const outSel  = document.getElementById('res-output');
+  if (!comp || !resMeta) { outSel.innerHTML = `<option value="">— variable —</option>`; return; }
+  const outputs = resMeta.components[comp] || [];
+  outSel.innerHTML = `<option value="">— variable —</option>` +
+    outputs.map(o => `<option value="${o}">${o}</option>`).join('');
+}
+
+async function addSeries() {
+  const comp  = document.getElementById('res-component').value;
+  const out   = document.getElementById('res-output').value;
+  const scen  = document.getElementById('res-scenario').value;
+  if (!comp || !out || !resActiveFile) { log('Select component and variable first', 'warn'); return; }
+
+  const url = `/api/results/series?study=${currentStudy}&file=${encodeURIComponent(resActiveFile)}&component=${encodeURIComponent(comp)}&output=${encodeURIComponent(out)}&scenario=${scen}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (data.error) { log(data.error, 'err'); return; }
+
+  const color  = nextColor();
+  const label  = `${comp}.${out} (s${scen})`;
+
+  document.getElementById('res-no-data').style.display = 'none';
+
+  if (!resChart) initChart();
+
+  // Set labels from the first series (all series share the same time steps)
+  if (resChart.data.datasets.length === 0) {
+    resChart.data.labels = data.times;
+  }
+  resChart.data.datasets.push({
+    label,
+    data:        data.values,
+    borderColor: color,
+    backgroundColor: color + '22',
+    borderWidth: 1.5,
+    pointRadius: data.times.length > 100 ? 0 : 2,
+    tension: 0.2,
+    fill: false,
+    _seriesKey: label,
+    _color: color,
+  });
+  resChart.update();
+  safeResize(resChart);
+
+  // Stats cards
+  showStats(label, data.stats, color);
+  log(`Series added: ${label} (${data.times.length} time steps)`, 'ok');
+}
+
+function initChart() {
+  const canvas = document.getElementById('res-chart');
+  const ctx = canvas.getContext('2d');
+  resChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12, padding: 16 },
+        },
+        tooltip: {
+          backgroundColor: '#1c2128',
+          borderColor: '#30363d', borderWidth: 1,
+          titleColor: '#c9d1d9', bodyColor: '#8b949e',
+          padding: 8,
+          callbacks: {
+            title: items => `Hour ${items[0].label}`,
+          },
+        },
+        zoom: {
+          pan:  { enabled: true, mode: 'x', threshold: 5 },
+          zoom: {
+            wheel:  { enabled: true },
+            pinch:  { enabled: true },
+            mode:   'x',
+            onZoomComplete: ({ chart }) => chart.update('none'),
+          },
+          limits: { x: { minRange: 1 } },
+        },
+      },
+      scales: {
+        x: {
+          type: 'category',
+          ticks: {
+            color: '#8b949e',
+            font: { size: 10 },
+            maxTicksLimit: 24,
+            callback: val => `h${val}`,
+          },
+          grid:  { color: '#21262d' },
+          title: { display: true, text: 'Time step (hour)', color: '#8b949e', font: { size: 11 } },
+        },
+        y: {
+          ticks: { color: '#8b949e', font: { size: 10 } },
+          grid:  { color: '#21262d' },
+        },
+      },
+    },
+  });
+  // ResizeObserver keeps chart sized correctly when panel resizes
+  resChart._obs = attachResizeObserver(resChart, canvas.parentElement);
+  safeResize(resChart);
+}
+
+function resetZoom() {
+  if (resChart) resChart.resetZoom();
+}
+
+function showStats(label, stats, color) {
+  if (!stats || !Object.keys(stats).length) return;
+  const bar  = document.getElementById('res-stats-bar');
+  const card = document.createElement('div');
+  card.className = 'stat-card';
+  card.dataset.series = label;
+  card.innerHTML = `
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">
+      <div class="chip-dot" style="background:${color};width:8px;height:8px;border-radius:50%;"></div>
+      <b style="color:var(--text);font-size:11px;">${label}</b>
+    </div>
+    <span>min</span><b>${fmt(stats.min)}</b> &nbsp;
+    <span>max</span><b>${fmt(stats.max)}</b> &nbsp;
+    <span>mean</span><b>${fmt(stats.mean)}</b> &nbsp;
+    <span>sum</span><b>${fmt(stats.sum)}</b>`;
+  bar.appendChild(card);
+}
+
+function fmt(v) {
+  if (v == null) return '—';
+  return Math.abs(v) >= 1000 ? v.toLocaleString('en-US', {maximumFractionDigits: 1}) : v.toFixed(3);
+}
+
+// ── store series data for table view ──────────────────────────────────────
+const seriesStore = [];   // [{label, color, times, values}]
+
+function clearSeries() {
+  if (resChart) {
+    if (resChart._obs) { resChart._obs.disconnect(); }
+    resChart.destroy();
+    resChart = null;
+  }
+  colorIdx = 0;
+  seriesStore.length = 0;
+  document.getElementById('res-stats-bar').innerHTML = '';
+  document.getElementById('res-no-data').style.display = 'flex';
+  document.getElementById('res-table').style.display = 'none';
+  document.getElementById('res-table-no-data').style.display = 'block';
+}
+
+// ── Results view toggle ────────────────────────────────────────────────────
+let resView = 'chart';
+function setResView(v) {
+  resView = v;
+  document.getElementById('res-vt-chart').classList.toggle('active', v === 'chart');
+  document.getElementById('res-vt-table').classList.toggle('active', v === 'table');
+  document.getElementById('res-chart-view').style.display  = v === 'chart' ? 'flex' : 'none';
+  document.getElementById('res-zoom-hint').style.display   = v === 'chart' ? ''     : 'none';
+  document.getElementById('res-reset-zoom').style.display  = v === 'chart' ? ''     : 'none';
+  document.getElementById('res-table-view').style.display  = v === 'table' ? ''     : 'none';
+  if (v === 'table') buildResTable();
+  if (v === 'chart') safeResize(resChart);
+}
+
+function buildResTable() {
+  const tbl     = document.getElementById('res-table');
+  const noData  = document.getElementById('res-table-no-data');
+  if (!seriesStore.length) { tbl.style.display='none'; noData.style.display='block'; return; }
+  noData.style.display = 'none';
+  tbl.style.display    = '';
+
+  // Header
+  let html = '<thead><tr><th class="row-hdr">Hour</th>';
+  seriesStore.forEach(s => {
+    html += `<th style="color:${s.color}">${s.label}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  // Rows — use first series time steps as reference
+  const times = seriesStore[0].times;
+  times.forEach((t, i) => {
+    html += `<tr><td class="row-hdr">h${t}</td>`;
+    seriesStore.forEach(s => {
+      const v = s.values[i];
+      html += `<td>${v != null ? fmt(v) : '—'}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  tbl.innerHTML = html;
+}
+
+// Override addSeries to also store data
+const _origAddSeries = addSeries;
+// We'll replace addSeries in place below; keep reference to store data
+
+// ══════════════════════════════════════════════
+//  DATA TAB
+// ══════════════════════════════════════════════
+let dataChart     = null;
+let activeDataFile = null;
+let dataRows      = [];    // [[val, val, ...], ...] — current in-memory data
+let dataDirty     = false;
+
+async function loadDataFiles() {
+  const res   = await fetch(`/api/timeseries/list?study=${currentStudy}`);
+  const files = await res.json();
+  const list  = document.getElementById('data-file-list');
+  if (!files.length) { list.innerHTML = `<div style="padding:14px 12px;color:var(--muted);font-size:11px;">No data series found.</div>`; return; }
+  list.innerHTML = files.map(f =>
+    `<div class="data-file-item${f===activeDataFile?' active':''}" id="dfile-${f}" style="display:flex;align-items:center;justify-content:space-between;padding-right:6px;">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;cursor:pointer;" onclick="loadDataFile('${esc(f)}')">${esc(f)}</span>
+      <button onclick="event.stopPropagation();deleteDataSeries('${esc(f)}')" title="Delete" style="background:none;border:none;color:var(--danger,#e55);cursor:pointer;padding:0 2px;font-size:12px;">✕</button>
+    </div>`
+  ).join('');
+}
+
+async function deleteDataSeries(filename) {
+  if (!confirm(`Delete data series "${filename}"?`)) return;
+  await fetch('/api/timeseries', {
+    method: 'DELETE',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ study: currentStudy, file: filename }),
+  });
+  if (activeDataFile === filename) { activeDataFile = null; dataRows = []; dataDirty = false; }
+  loadDataFiles();
+}
+
+async function loadDataFile(filename) {
+  if (dataDirty && !confirm('Unsaved changes — discard?')) return;
+
+  activeDataFile = filename;
+  dataDirty      = false;
+
+  document.querySelectorAll('.data-file-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`dfile-${filename}`);
+  if (el) el.classList.add('active');
+
+  document.getElementById('data-filename').textContent = filename + '.csv';
+  document.getElementById('data-filename').style.color = 'var(--text)';
+  document.getElementById('data-dirty-badge').style.display = 'none';
+  document.getElementById('data-save-btn').disabled = true;
+
+  const res  = await fetch(`/api/timeseries?study=${currentStudy}&file=${encodeURIComponent(filename)}`);
+  const data = await res.json();
+  dataRows   = data.rows;   // [[v], [v], ...] or [[v1,v2,...], ...]
+
+  renderDataChart();
+  if (document.getElementById('data-vt-table').classList.contains('active') ||
+      document.getElementById('data-table-view').style.display !== 'none') {
+    renderDataTable();
+  }
+  document.getElementById('data-no-data').style.display = 'none';
+}
+
+function renderDataChart() {
+  const nCols = dataRows.length ? dataRows[0].length : 0;
+  const times = dataRows.map((_, i) => i + 1);
+
+  if (dataChart) {
+    if (dataChart._obs) dataChart._obs.disconnect();
+    dataChart.destroy();
+    dataChart = null;
+  }
+  const canvas = document.getElementById('data-chart');
+  const datasets = Array.from({length: nCols}, (_, c) => ({
+    label:           nCols > 1 ? `Scenario ${c}` : activeDataFile,
+    data:            dataRows.map(r => parseFloat(r[c])),
+    borderColor:     CHART_COLORS[c % CHART_COLORS.length],
+    backgroundColor: CHART_COLORS[c % CHART_COLORS.length] + '22',
+    borderWidth:     1.5,
+    pointRadius:     0,
+    tension:         0.2,
+    fill:            false,
+  }));
+
+  dataChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: times, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: nCols > 1, labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12 } },
+        tooltip: {
+          backgroundColor: '#1c2128', borderColor: '#30363d', borderWidth: 1,
+          titleColor: '#c9d1d9', bodyColor: '#8b949e',
+          callbacks: { title: items => `h${items[0].label}` },
+        },
+        zoom: {
+          pan:  { enabled: true, mode: 'x' },
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+          limits: { x: { minRange: 1 } },
+        },
+      },
+      scales: {
+        x: { type:'category', ticks: { color:'#8b949e', font:{size:10}, maxTicksLimit:24, callback: v=>`h${v}` }, grid:{color:'#21262d'}, title:{display:true,text:'Hour',color:'#8b949e'} },
+        y: { ticks: { color:'#8b949e', font:{size:10} }, grid:{color:'#21262d'} },
+      },
+    },
+  });
+  dataChart._obs = attachResizeObserver(dataChart, canvas.parentElement);
+  safeResize(dataChart);
+}
+
+function renderDataTable() {
+  const tbl  = document.getElementById('data-table');
+  const nCols = dataRows.length ? dataRows[0].length : 0;
+  const colHeaders = nCols === 1
+    ? [activeDataFile]
+    : Array.from({length: nCols}, (_, i) => `S${i}`);
+
+  let html = '<thead><tr><th class="row-hdr">Hour</th>';
+  colHeaders.forEach(h => { html += `<th>${h}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  dataRows.forEach((row, i) => {
+    html += `<tr><td class="row-hdr">h${i + 1}</td>`;
+    row.forEach((v, c) => {
+      html += `<td contenteditable="true" data-r="${i}" data-c="${c}" oninput="onCellEdit(this)">${v}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  tbl.innerHTML = html;
+}
+
+function onCellEdit(cell) {
+  const r = parseInt(cell.dataset.r);
+  const c = parseInt(cell.dataset.c);
+  dataRows[r][c] = cell.textContent.trim();
+  cell.classList.add('dirty');
+  if (!dataDirty) {
+    dataDirty = true;
+    document.getElementById('data-dirty-badge').style.display = '';
+    document.getElementById('data-save-btn').disabled = false;
+  }
+}
+
+async function saveTimeSeries() {
+  if (!activeDataFile) return;
+  const res = await fetch('/api/timeseries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ study: currentStudy, file: activeDataFile, rows: dataRows }),
+  });
+  const data = await res.json();
+  if (data.status === 'ok') {
+    dataDirty = false;
+    document.getElementById('data-dirty-badge').style.display = 'none';
+    document.getElementById('data-save-btn').disabled = true;
+    document.querySelectorAll('#data-table td.dirty').forEach(td => td.classList.remove('dirty'));
+    log(`Saved: ${activeDataFile}.csv`, 'ok');
+    // Refresh chart
+    if (document.getElementById('data-chart-view').style.display !== 'none') renderDataChart();
+  } else {
+    log(`Save failed: ${JSON.stringify(data)}`, 'err');
+  }
+}
+
+// ── Data view toggle ───────────────────────────────────────────────────────
+function setDataView(v) {
+  document.getElementById('data-vt-chart').classList.toggle('active', v === 'chart');
+  document.getElementById('data-vt-table').classList.toggle('active', v === 'table');
+  document.getElementById('data-chart-view').style.display = v === 'chart' ? 'flex' : 'none';
+  document.getElementById('data-table-view').style.display = v === 'table' ? ''     : 'none';
+  if (v === 'table' && activeDataFile) renderDataTable();
+  if (v === 'chart') safeResize(dataChart);
+}
+
+// ── extend switchTab to handle 'data' ─────────────────────────────────────
+const _origSwitchTab = switchTab;
+function switchTab(tab) {
+  document.getElementById('tab-editor').classList.toggle('active',  tab === 'editor');
+  document.getElementById('tab-data').classList.toggle('active',    tab === 'data');
+  document.getElementById('tab-results').classList.toggle('active', tab === 'results');
+
+  const editorEls = ['palette', 'canvas-wrap', 'properties', 'editor-btns'];
+  editorEls.forEach(id => document.getElementById(id).style.display = tab === 'editor' ? '' : 'none');
+  document.getElementById('results-view').style.display = tab === 'results' ? 'flex' : 'none';
+  document.getElementById('data-view').style.display    = tab === 'data'    ? 'flex' : 'none';
+
+  if (tab === 'results') {
+    loadResultFiles();
+    safeResize(resChart);
+  }
+  if (tab === 'data') {
+    loadDataFiles();
+    safeResize(dataChart);
+  }
+}
+
+// Patch addSeries to store data for table
+async function addSeries() {
+  const comp  = document.getElementById('res-component').value;
+  const out   = document.getElementById('res-output').value;
+  const scen  = document.getElementById('res-scenario').value;
+  if (!comp || !out || !resActiveFile) { log('Select component and variable first', 'warn'); return; }
+
+  const url  = `/api/results/series?study=${currentStudy}&file=${encodeURIComponent(resActiveFile)}&component=${encodeURIComponent(comp)}&output=${encodeURIComponent(out)}&scenario=${scen}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (data.error) { log(data.error, 'err'); return; }
+
+  const color = nextColor();
+  const label = `${comp}.${out} (s${scen})`;
+
+  seriesStore.push({ label, color, times: data.times, values: data.values });
+
+  document.getElementById('res-no-data').style.display = 'none';
+  if (!resChart) initChart();
+
+  if (resChart.data.datasets.length === 0) resChart.data.labels = data.times;
+  resChart.data.datasets.push({
+    label, data: data.values,
+    borderColor: color, backgroundColor: color + '22',
+    borderWidth: 1.5, pointRadius: data.times.length > 100 ? 0 : 2,
+    tension: 0.2, fill: false,
+  });
+  resChart.update();
+  safeResize(resChart);
+
+  showStats(label, data.stats, color);
+  log(`Series added: ${label} (${data.times.length} time steps)`, 'ok');
+
+  // Refresh table if visible
+  if (resView === 'table') buildResTable();
+}
+
+// ══════════════════════════════════════════════
+//  MULTI-LIBRARY SUPPORT — override palette + helpers
+// ══════════════════════════════════════════════
+let pendingLibId = null;
+
+function buildPalette() {
+  const el = document.getElementById('model-list');
+  if (!modelsData || !modelsData.libraries) { el.innerHTML = ''; return; }
+  let html = '';
+  for (const [libId, lib] of Object.entries(modelsData.libraries)) {
+    const models = (lib.data && lib.data.library && lib.data.library.models) || [];
+    if (!models.length) continue;
+    html += `<div class="palette-lib-hdr">${libId}</div>`;
+    models.forEach(m => {
+      const s = styleOf(m.id);
+      html += `<div class="model-item" onclick="openAddModal('${libId}','${m.id}')" title="Add ${m.id}">
+        <div class="model-icon ${s.cls}">${s.icon}</div>
+        <div><div class="model-label">${s.label || m.id}</div><div class="model-desc">${m.id}</div></div>
+      </div><div class="palette-sep"></div>`;
+    });
+  }
+  el.innerHTML = html;
+}
+
+function findModelDef(type) {
+  if (!modelsData) return null;
+  if (modelsData.libraries) {
+    for (const lib of Object.values(modelsData.libraries)) {
+      const models = (lib.data && lib.data.library && lib.data.library.models) || [];
+      const m = models.find(m => m.id === type);
+      if (m) return m;
+    }
+    return null;
+  }
+  return null;
+}
+
+function openAddModal(libId, modelType) {
+  pendingLibId     = libId;
+  pendingModelType = modelType;
+  pendingModelDef  = findModelDef(modelType);
+  const s = styleOf(modelType);
+  document.getElementById('add-modal-title').textContent = `Add ${s.label || modelType}`;
+  document.getElementById('add-modal-icon').textContent  = s.icon;
+  document.getElementById('add-modal-icon').className    = `model-icon ${s.cls}`;
+  document.getElementById('add-modal-icon').style.cssText = 'width:22px;height:22px;font-size:12px;';
+  document.getElementById('add-id').value = '';
+  const container = document.getElementById('add-params-container');
+  if (pendingModelDef && pendingModelDef.parameters && pendingModelDef.parameters.length) {
+    let html = `<div class="form-row" style="margin-top:8px;"><div class="form-label" style="color:var(--muted);font-size:10px;text-transform:uppercase;">Parameters</div></div>`;
+    for (const p of pendingModelDef.parameters) {
+      const isTD = p['time-dependent'], isSD = p['scenario-dependent'];
+      const badges = [isTD ? '[T]' : '', isSD ? '[S]' : ''].filter(Boolean).join(' ');
+      html += `<div class="form-row"><label class="form-label">${p.id} <span style="color:var(--muted)">${badges}</span></label>`;
+      if (isTD || isSD) {
+        html += `<select class="form-input" id="add-p-${p.id}"><option value="">— select data series —</option>${dataSeries.map(ds => `<option value="${ds}">${ds}</option>`).join('')}</select>`;
+      } else {
+        html += `<input class="form-input" id="add-p-${p.id}" type="text" placeholder="numeric value">`;
+      }
+      html += `</div>`;
+    }
+    container.innerHTML = html;
+  } else { container.innerHTML = ''; }
+  document.getElementById('add-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('add-id').focus(), 50);
+}
+
+function confirmAdd() {
+  const id = document.getElementById('add-id').value.trim();
+  if (!id) { alert('Please enter a component ID'); return; }
+  if (findComponent(id)) { alert(`Component "${id}" already exists`); return; }
+  const params = [];
+  if (pendingModelDef && pendingModelDef.parameters) {
+    for (const p of pendingModelDef.parameters) {
+      const el = document.getElementById(`add-p-${p.id}`);
+      if (!el) continue;
+      const val = el.value;
+      if (val === '') continue;
+      const isTD = !!p['time-dependent'], isSD = !!p['scenario-dependent'];
+      params.push({ id: p.id, 'time-dependent': isTD, 'scenario-dependent': isSD,
+        value: (isTD || isSD) ? val : isNaN(val) ? val : Number(val) });
+    }
+  }
+  const comp = { id, model: `${pendingLibId || 'antares_legacy_models'}.${pendingModelType}`, parameters: params };
+  systemData.system.components.push(comp);
+  let x = 0, y = 0;
+  if (network) { const v = network.getViewPosition(); x = v.x + (Math.random()-.5)*200; y = v.y + (Math.random()-.5)*200; }
+  layoutData[id] = { x: Math.round(x), y: Math.round(y) };
+  nodesDS.add(visNode(comp, pendingModelType, layoutData[id]));
+  closeAddModal();
+  log(`Added component: ${id} [${pendingModelType}]`, 'ok');
+  selectNode(id);
+}
+
+// Helper: clearChart alias
+function clearChart() { clearSeries(); }
+
+// ══════════════════════════════════════════════
+//  UNIFIED switchTab (handles all 4 tabs)
+// ══════════════════════════════════════════════
+function switchTab(tab) {
+  currentTab = tab;
+  ['editor','data','library','results'].forEach(t =>
+    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab)
+  );
+  const editorEls = ['palette','canvas-wrap','properties','editor-btns'];
+  editorEls.forEach(id => document.getElementById(id).style.display = tab === 'editor' ? '' : 'none');
+  document.getElementById('results-view').style.display = tab === 'results' ? 'flex' : 'none';
+  document.getElementById('data-view').style.display    = tab === 'data'    ? 'flex' : 'none';
+  document.getElementById('library-view').style.display = tab === 'library' ? 'flex' : 'none';
+  if (tab === 'results') { loadResultFiles(); safeResize(resChart); }
+  if (tab === 'data')    { loadDataFiles();   safeResize(dataChart); }
+  if (tab === 'library') loadLibraryFiles();
+}
+
+// ══════════════════════════════════════════════
+//  LIBRARY EDITOR
+// ══════════════════════════════════════════════
+let libActiveFile     = null;
+let libCurrentData    = null;
+let libDirty          = false;
+let libCurrentModelId = null;
+let libModelTab       = 'parameters';
+let libEditingPTIdx   = null;   // null = new, number = editing existing
+
+function libMarkDirty() {
+  libDirty = true;
+  document.getElementById('lib-dirty-badge').style.display = '';
+}
+
+async function loadLibraryFiles() {
+  const res   = await fetch(`/api/libraries?study=${currentStudy}`);
+  const files = await res.json();
+  const list  = document.getElementById('lib-file-list');
+  if (!files.length) {
+    list.innerHTML = `<div style="padding:14px 12px;color:var(--muted);font-size:11px;">No library files found.</div>`;
+    return;
+  }
+  list.innerHTML = files.map(f =>
+    `<div class="lib-file-item${f===libActiveFile?' active':''}" id="lfile-${CSS.escape(f)}" style="display:flex;align-items:center;justify-content:space-between;padding-right:6px;">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;cursor:pointer;" onclick="selectLibrary('${esc(f)}')">${esc(f)}</span>
+      <button onclick="event.stopPropagation();deleteLibraryFile('${esc(f)}')" title="Delete" style="background:none;border:none;color:var(--danger,#e55);cursor:pointer;padding:0 2px;font-size:12px;">✕</button>
+    </div>`
+  ).join('');
+}
+
+async function deleteLibraryFile(filename) {
+  if (!confirm(`Delete library "${filename}"?`)) return;
+  await fetch('/api/library', {
+    method: 'DELETE',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ study: currentStudy, file: filename }),
+  });
+  if (libActiveFile === filename) { libActiveFile = null; libCurrentData = null; libDirty = false; libCurrentModelId = null; }
+  await loadLibraryFiles();
+  const mRes = await fetch(`/api/models?study=${currentStudy}`);
+  modelsData = await mRes.json();
+  buildPalette();
+}
+
+async function selectLibrary(filename) {
+  if (libDirty && !confirm('Unsaved library changes — discard?')) return;
+  libActiveFile = filename;
+  libDirty      = false;
+  libCurrentModelId = null;
+  document.querySelectorAll('.lib-file-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`lfile-${CSS.escape(filename)}`);
+  if (el) el.classList.add('active');
+  const res  = await fetch(`/api/library?study=${currentStudy}&file=${encodeURIComponent(filename)}`);
+  const json = await res.json();
+  libCurrentData = json.data;
+  if (!libCurrentData.library) libCurrentData.library = { id: '', models: [] };
+  if (!libCurrentData.library['port-types']) libCurrentData.library['port-types'] = [];
+  if (!libCurrentData.library.models)        libCurrentData.library.models        = [];
+  document.getElementById('lib-placeholder').style.display = 'none';
+  document.getElementById('lib-editor').style.display      = 'flex';
+  document.getElementById('lib-dirty-badge').style.display = 'none';
+  document.getElementById('lib-id-input').value   = libCurrentData.library.id || '';
+  document.getElementById('lib-desc-input').value = libCurrentData.library.description || '';
+  renderPortTypes();
+  renderModels();
+  showModelPlaceholder();
+}
+
+function getLib()    { return libCurrentData.library; }
+function getPTs()    { return getLib()['port-types'] || []; }
+function getModels() { return getLib().models || []; }
+
+// ── PORT TYPES ──────────────────────────────────────────────────────────────
+function renderPortTypes() {
+  const list = document.getElementById('lib-port-list');
+  const pts  = getPTs();
+  if (!pts.length) {
+    list.innerHTML = `<div style="padding:6px 10px;color:var(--muted);font-size:11px;">No port types</div>`;
+    return;
+  }
+  list.innerHTML = pts.map((pt, i) => `
+    <div class="lib-item">
+      <span>${pt.id}</span>
+      <button class="edit-btn" onclick="editPortType(${i})" title="Edit">✎</button>
+      <button class="del" onclick="deletePortType(${i})" title="Delete">✕</button>
+    </div>`).join('');
+}
+
+function startAddPortType() {
+  libEditingPTIdx = null;
+  document.getElementById('pt-id-input').value   = '';
+  document.getElementById('pt-desc-input').value = '';
+  document.getElementById('pt-fields-list').innerHTML = '';
+  document.getElementById('pt-edit-form').style.display = '';
+}
+
+function editPortType(idx) {
+  const pt = getPTs()[idx];
+  if (!pt) return;
+  libEditingPTIdx = idx;
+  document.getElementById('pt-id-input').value   = pt.id || '';
+  document.getElementById('pt-desc-input').value = pt.description || '';
+  const fieldsEl = document.getElementById('pt-fields-list');
+  fieldsEl.innerHTML = '';
+  (pt.fields || []).forEach(f => addPTFieldRow(f));
+  document.getElementById('pt-edit-form').style.display = '';
+}
+
+function deletePortType(idx) {
+  if (!confirm('Delete this port type?')) return;
+  getPTs().splice(idx, 1);
+  libMarkDirty();
+  renderPortTypes();
+  document.getElementById('pt-edit-form').style.display = 'none';
+}
+
+function addPTField() { addPTFieldRow(''); }
+
+function addPTFieldRow(val) {
+  const fieldId = (val && typeof val === 'object') ? (val.id || '') : (val || '');
+  const row = document.createElement('div');
+  row.className = 'field-row';
+  row.innerHTML = `<input type="text" value="${esc(fieldId)}" placeholder="field id" oninput="libMarkDirty()">
+    <button onclick="this.parentElement.remove();libMarkDirty()">✕</button>`;
+  document.getElementById('pt-fields-list').appendChild(row);
+}
+
+function applyPortType() {
+  const id = document.getElementById('pt-id-input').value.trim();
+  if (!id) { alert('Port type ID is required'); return; }
+  const desc   = document.getElementById('pt-desc-input').value.trim();
+  const fields = Array.from(document.querySelectorAll('#pt-fields-list .field-row input'))
+    .map(i => i.value.trim()).filter(Boolean).map(f => ({ id: f }));
+  const pt = { id, ...(desc ? {description: desc} : {}), ...(fields.length ? {fields} : {}) };
+  const pts = getPTs();
+  if (libEditingPTIdx !== null) { pts[libEditingPTIdx] = pt; }
+  else { pts.push(pt); }
+  libMarkDirty();
+  libEditingPTIdx = null;
+  document.getElementById('pt-edit-form').style.display = 'none';
+  renderPortTypes();
+}
+
+function cancelPortType() {
+  libEditingPTIdx = null;
+  document.getElementById('pt-edit-form').style.display = 'none';
+}
+
+// ── MODELS ──────────────────────────────────────────────────────────────────
+function renderModels() {
+  const inner  = document.getElementById('lib-model-list-inner');
+  const models = getModels();
+  if (!models.length) {
+    inner.innerHTML = `<div style="padding:6px 10px;color:var(--muted);font-size:11px;">No models</div>`;
+    return;
+  }
+  inner.innerHTML = models.map(m => `
+    <div class="lib-item${m.id===libCurrentModelId?' active':''}" onclick="selectModel('${m.id}')">
+      <span>${m.id}</span>
+      <button class="del" onclick="event.stopPropagation();deleteModel('${m.id}')" title="Delete">✕</button>
+    </div>`).join('');
+}
+
+function startAddModel() {
+  const newId = `new_model`;
+  const model = { id: newId, parameters: [], variables: [], ports: [],
+    'port-field-definitions': [], constraints: [], 'binding-constraints': [],
+    'objective-contributions': [], 'extra-outputs': [] };
+  getModels().push(model);
+  libMarkDirty();
+  renderModels();
+  selectModel(newId);
+}
+
+function selectModel(id) {
+  libCurrentModelId = id;
+  renderModels();
+  const model = getModels().find(m => m.id === id);
+  if (!model) return;
+  document.getElementById('lib-model-editor-placeholder').style.display = 'none';
+  document.getElementById('lib-model-form').style.display = 'flex';
+  document.getElementById('lib-model-id-input').value   = model.id;
+  document.getElementById('lib-model-desc-input').value = model.description || '';
+  document.querySelectorAll('.mst-btn').forEach(b => b.classList.remove('active'));
+  const activeBtn = document.querySelector(`.mst-btn[onclick*="'${libModelTab}'"]`);
+  if (activeBtn) activeBtn.classList.add('active');
+  renderModelSection(libModelTab);
+}
+
+function showModelPlaceholder() {
+  libCurrentModelId = null;
+  document.getElementById('lib-model-editor-placeholder').style.display = 'flex';
+  document.getElementById('lib-model-form').style.display = 'none';
+}
+
+function deleteModel(id) {
+  if (!confirm(`Delete model "${id}"?`)) return;
+  const arr = getModels();
+  const idx = arr.findIndex(m => m.id === id);
+  if (idx !== -1) arr.splice(idx, 1);
+  libMarkDirty();
+  renderModels();
+  if (libCurrentModelId === id) showModelPlaceholder();
+}
+
+function onModelHeaderInput() {
+  const model = getModels().find(m => m.id === libCurrentModelId);
+  if (!model) return;
+  const newId   = document.getElementById('lib-model-id-input').value.trim();
+  const newDesc = document.getElementById('lib-model-desc-input').value;
+  if (newId && newId !== model.id) {
+    model.id = newId;
+    libCurrentModelId = newId;
+    renderModels();
+  }
+  if (newDesc) model.description = newDesc; else delete model.description;
+  libMarkDirty();
+}
+
+function setModelTab(tab) {
+  libModelTab = tab;
+  document.querySelectorAll('.mst-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.mst-btn[onclick*="'${tab}'"]`);
+  if (btn) btn.classList.add('active');
+  renderModelSection(tab);
+}
+
+// ── MODEL SECTION RENDERING ──────────────────────────────────────────────────
+function renderModelSection(tab) {
+  const model = getModels().find(m => m.id === libCurrentModelId);
+  const body  = document.getElementById('lib-model-tab-body');
+  if (!model) { body.innerHTML = ''; return; }
+  switch (tab) {
+    case 'parameters':             body.innerHTML = renderParamsSection(model); break;
+    case 'variables':              body.innerHTML = renderVarsSection(model); break;
+    case 'ports':                  body.innerHTML = renderPortsSection(model); break;
+    case 'port-field-definitions': body.innerHTML = renderPFDSection(model); break;
+    case 'constraints':            body.innerHTML = renderConstraintsSection(model, 'constraints'); break;
+    case 'binding-constraints':    body.innerHTML = renderConstraintsSection(model, 'binding-constraints'); break;
+    case 'objective-contributions':body.innerHTML = renderSimpleExprSection(model, 'objective-contributions'); break;
+    case 'extra-outputs':          body.innerHTML = renderSimpleExprSection(model, 'extra-outputs'); break;
+    default: body.innerHTML = '';
+  }
+}
+
+function renderParamsSection(model) {
+  const items = model.parameters || [];
+  let h = `<button class="btn" style="margin-bottom:8px;" onclick="libAddItem('parameters')">+ Add Parameter</button>`;
+  if (!items.length) { h += `<div style="color:var(--muted);font-size:11px;padding:4px 0;">No parameters defined</div>`; return h; }
+  h += `<table class="sec-tbl"><thead><tr><th>ID</th><th>Description</th><th title="time-dependent">T</th><th title="scenario-dependent">S</th><th></th></tr></thead><tbody>`;
+  items.forEach((p, i) => {
+    h += `<tr style="cursor:pointer" onclick="libEditItem('parameters',${i})">
+      <td><code>${esc(p.id)}</code></td><td>${esc(p.description||'')}</td>
+      <td><span class="${p['time-dependent']?'bool-yes':'bool-no'}">${p['time-dependent']?'\u2714':'\u2013'}</span></td>
+      <td><span class="${p['scenario-dependent']?'bool-yes':'bool-no'}">${p['scenario-dependent']?'\u2714':'\u2013'}</span></td>
+      <td class="act-cell"><button onclick="event.stopPropagation();libDeleteItem('parameters',${i})" title="Delete">\u2715</button></td></tr>`;
+  });
+  return h + '</tbody></table>';
+}
+
+function renderVarsSection(model) {
+  const items = model.variables || [];
+  let h = `<button class="btn" style="margin-bottom:8px;" onclick="libAddItem('variables')">+ Add Variable</button>`;
+  if (!items.length) { h += `<div style="color:var(--muted);font-size:11px;padding:4px 0;">No variables defined</div>`; return h; }
+  h += `<table class="sec-tbl"><thead><tr><th>ID</th><th>Lower</th><th>Upper</th><th>Type</th><th></th></tr></thead><tbody>`;
+  items.forEach((v, i) => {
+    h += `<tr style="cursor:pointer" onclick="libEditItem('variables',${i})">
+      <td><code>${esc(v.id)}</code></td>
+      <td class="expr-cell">${esc(String(v['lower-bound']??''))}</td>
+      <td class="expr-cell">${esc(String(v['upper-bound']??''))}</td>
+      <td class="expr-cell">${esc(v['variable-type']||'')}</td>
+      <td class="act-cell"><button onclick="event.stopPropagation();libDeleteItem('variables',${i})" title="Delete">\u2715</button></td></tr>`;
+  });
+  return h + '</tbody></table>';
+}
+
+function renderPortsSection(model) {
+  const items = model.ports || [];
+  let h = `<button class="btn" style="margin-bottom:8px;" onclick="libAddItem('ports')">+ Add Port</button>`;
+  if (!items.length) { h += `<div style="color:var(--muted);font-size:11px;padding:4px 0;">No ports defined</div>`; return h; }
+  h += `<table class="sec-tbl"><thead><tr><th>ID</th><th>Type</th><th></th></tr></thead><tbody>`;
+  items.forEach((p, i) => {
+    h += `<tr style="cursor:pointer" onclick="libEditItem('ports',${i})">
+      <td><code>${esc(p.id)}</code></td><td>${esc(p.type||'')}</td>
+      <td class="act-cell"><button onclick="event.stopPropagation();libDeleteItem('ports',${i})" title="Delete">\u2715</button></td></tr>`;
+  });
+  return h + '</tbody></table>';
+}
+
+function renderPFDSection(model) {
+  const items = model['port-field-definitions'] || [];
+  let h = `<button class="btn" style="margin-bottom:8px;" onclick="libAddItem('port-field-definitions')">+ Add Definition</button>`;
+  if (!items.length) { h += `<div style="color:var(--muted);font-size:11px;padding:4px 0;">No port field definitions</div>`; return h; }
+  h += `<table class="sec-tbl"><thead><tr><th>Definition</th><th>Field</th><th>Port</th><th></th></tr></thead><tbody>`;
+  items.forEach((pfd, i) => {
+    h += `<tr style="cursor:pointer" onclick="libEditItem('port-field-definitions',${i})">
+      <td class="expr-cell">${esc(pfd.definition||'')}</td><td>${esc(pfd.field||'')}</td>
+      <td>${esc(pfd.port||'')}</td>
+      <td class="act-cell"><button onclick="event.stopPropagation();libDeleteItem('port-field-definitions',${i})" title="Delete">\u2715</button></td></tr>`;
+  });
+  return h + '</tbody></table>';
+}
+
+function renderConstraintsSection(model, key) {
+  const items = model[key] || [];
+  let h = `<button class="btn" style="margin-bottom:8px;" onclick="libAddItem('${key}')">+ Add</button>`;
+  if (!items.length) { h += `<div style="color:var(--muted);font-size:11px;padding:4px 0;">No ${key}</div>`; return h; }
+  h += `<table class="sec-tbl"><thead><tr><th>ID</th><th>Expression</th><th></th></tr></thead><tbody>`;
+  items.forEach((c, i) => {
+    h += `<tr style="cursor:pointer" onclick="libEditItem('${key}',${i})">
+      <td><code>${esc(c.id||'')}</code></td>
+      <td class="expr-cell">${esc(c.expression||'')}</td>
+      <td class="act-cell"><button onclick="event.stopPropagation();libDeleteItem('${key}',${i})" title="Delete">\u2715</button></td></tr>`;
+  });
+  return h + '</tbody></table>';
+}
+
+function renderSimpleExprSection(model, key) {
+  const items = model[key] || [];
+  let h = `<button class="btn" style="margin-bottom:8px;" onclick="libAddItem('${key}')">+ Add</button>`;
+  if (!items.length) { h += `<div style="color:var(--muted);font-size:11px;padding:4px 0;">No ${key}</div>`; return h; }
+  h += `<table class="sec-tbl"><thead><tr><th>ID</th><th>Expression</th><th></th></tr></thead><tbody>`;
+  items.forEach((item, i) => {
+    h += `<tr style="cursor:pointer" onclick="libEditItem('${key}',${i})">
+      <td><code>${esc(item.id||'')}</code></td>
+      <td class="expr-cell">${esc(item.expression||item.expr||'')}</td>
+      <td class="act-cell"><button onclick="event.stopPropagation();libDeleteItem('${key}',${i})" title="Delete">\u2715</button></td></tr>`;
+  });
+  return h + '</tbody></table>';
+}
+
+// ── GENERIC ITEM CRUD (modal-based) ──────────────────────────────────────────
+let _libModalSection = null;
+let _libModalIdx     = null;
+
+function libDeleteItem(section, idx) {
+  const model = getModels().find(m => m.id === libCurrentModelId);
+  if (!model) return;
+  const arr = model[section] || [];
+  if (!confirm(`Delete "${arr[idx]?.id || 'item'}"?`)) return;
+  arr.splice(idx, 1);
+  libMarkDirty();
+  renderModelSection(libModelTab);
+}
+
+function libEditItem(section, idx) {
+  const model = getModels().find(m => m.id === libCurrentModelId);
+  if (!model) return;
+  openLibItemModal(section, idx, (model[section] || [])[idx]);
+}
+
+function libAddItem(section) { openLibItemModal(section, null, null); }
+
+function openLibItemModal(section, idx, item) {
+  _libModalSection = section;
+  _libModalIdx     = idx;
+  const isEdit = idx !== null;
+  const labels = {
+    'parameters':'Parameter','variables':'Variable','ports':'Port',
+    'port-field-definitions':'Port Field Definition',
+    'constraints':'Constraint','binding-constraints':'Binding Constraint',
+    'objective-contributions':'Objective Contribution','extra-outputs':'Extra Output',
+  };
+  document.getElementById('lib-item-modal-title').textContent = (isEdit?'Edit ':'Add ') + (labels[section]||section);
+  let h = `<div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));">`;
+  if (section === 'parameters') {
+    h += mfield('ID *','sf-id',item?.id||'');
+    h += mselect('Time-dependent','sf-td',[['false','No'],['true','Yes']],item?.['time-dependent']?'true':'false');
+    h += mselect('Scenario-dep','sf-sd',[['false','No'],['true','Yes']],item?.['scenario-dependent']?'true':'false');
+  } else if (section === 'variables') {
+    h += mfield('ID *','sf-id',item?.id||'');
+    h += mfield('Lower bound','sf-lb',String(item?.['lower-bound']??''));
+    h += mfield('Upper bound','sf-ub',String(item?.['upper-bound']??''));
+    h += mselect('Variable type','sf-vtype',[['continuous','continuous'],['integer','integer'],['binary','binary']],item?.['variable-type']||'continuous');
+  } else if (section === 'ports') {
+    const ptOpts = getPTs().map(pt => [pt.id, pt.id]);
+    h += mfield('ID *','sf-id',item?.id||'');
+    h += mselect('Type','sf-type',[['','\u2014'],...ptOpts],item?.type||'');
+  } else if (section === 'port-field-definitions') {
+    const ports = ((getModels().find(m=>m.id===libCurrentModelId)?.ports)||[]).map(p=>[p.id,p.id]);
+    h += mselect('Port *','sf-port',[['','\u2014'],...ports],item?.port||'');
+    h += mfield('Field *','sf-field',item?.field||'');
+    h += `</div><div style="margin-top:8px;">${mtextarea('Definition','sf-expr',item?.definition||'','e.g. generation[t]')}</div><div style="display:none">`;
+  } else if (section === 'constraints' || section === 'binding-constraints') {
+    h += mfield('ID *','sf-id',item?.id||'');
+    h += `</div><div style="margin-top:8px;">${mtextarea('Expression','sf-expr',item?.expression||'','e.g. generation[t] + withdrawal[t]')}</div><div style="display:none">`;
+  } else if (section === 'objective-contributions' || section === 'extra-outputs') {
+    h += mfield('ID *','sf-id',item?.id||'');
+    h += `</div><div style="margin-top:8px;">${mtextarea('Expression','sf-expr',item?.expression||item?.expr||'','Expression')}</div><div style="display:none">`;
+  }
+  h += `</div>`;
+  document.getElementById('lib-item-modal-body').innerHTML = h;
+  document.getElementById('lib-item-modal').style.display = 'flex';
+  setTimeout(() => document.querySelector('#lib-item-modal-body input,#lib-item-modal-body textarea,#lib-item-modal-body select')?.focus(), 50);
+}
+
+function mfield(lbl, id, val) {
+  return `<div><label class="form-label">${lbl}</label><input id="${id}" class="form-input" type="text" value="${esc(val)}"></div>`;
+}
+function mselect(lbl, id, opts, cur) {
+  return `<div><label class="form-label">${lbl}</label><select id="${id}" class="form-input">${opts.map(([v,l])=>`<option value="${v}"${v===cur?' selected':''}>${l}</option>`).join('')}</select></div>`;
+}
+function mtextarea(lbl, id, val, ph) {
+  return `<div><label class="form-label">${lbl}</label><textarea id="${id}" class="form-input" style="width:100%;min-height:80px;resize:vertical;font-family:monospace;font-size:12px;" placeholder="${ph}">${esc(val)}</textarea></div>`;
+}
+
+function closeLibItemModal() {
+  document.getElementById('lib-item-modal').style.display = 'none';
+}
+
+function libApplyModal() {
+  const section = _libModalSection;
+  const idx     = _libModalIdx;
+  const model   = getModels().find(m => m.id === libCurrentModelId);
+  if (!model || !section) return;
+  if (!model[section]) model[section] = [];
+  const arr = model[section];
+  const g  = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const gb = id => { const el = document.getElementById(id); return el ? el.value === 'true' : false; };
+  const gn = id => { const v = g(id); return v === '' ? undefined : isNaN(v) ? v : Number(v); };
+  let item = {};
+  if (section === 'parameters') {
+    const id = g('sf-id'); if (!id) { alert('ID is required'); return; }
+    item = { id };
+    item['time-dependent']     = gb('sf-td');
+    item['scenario-dependent'] = gb('sf-sd');
+  } else if (section === 'variables') {
+    const id = g('sf-id'); if (!id) { alert('ID is required'); return; }
+    item = { id };
+    if (g('sf-lb') !== '') item['lower-bound'] = gn('sf-lb');
+    if (g('sf-ub') !== '') item['upper-bound'] = gn('sf-ub');
+    item['variable-type'] = g('sf-vtype') || 'continuous';
+  } else if (section === 'ports') {
+    const id = g('sf-id'); if (!id) { alert('ID is required'); return; }
+    item = { id };
+    if (g('sf-type')) item.type = g('sf-type');
+  } else if (section === 'port-field-definitions') {
+    const port = g('sf-port'), fld = g('sf-field');
+    if (!port || !fld) { alert('Port and field are required'); return; }
+    item = { port, field: fld, definition: g('sf-expr') };
+  } else if (section === 'constraints' || section === 'binding-constraints') {
+    const id = g('sf-id'); if (!id) { alert('ID is required'); return; }
+    item = { id, expression: g('sf-expr') };
+    if (g('sf-lb') !== '') item['lower-bound'] = gn('sf-lb');
+    if (g('sf-ub') !== '') item['upper-bound'] = gn('sf-ub');
+  } else if (section === 'objective-contributions' || section === 'extra-outputs') {
+    const id = g('sf-id'); if (!id) { alert('ID is required'); return; }
+    item = { id, expression: g('sf-expr') };
+  }
+  if (idx === null) { arr.push(item); } else { arr[parseInt(idx)] = item; }
+  libMarkDirty();
+  closeLibItemModal();
+  renderModelSection(libModelTab);
+}
+
+// ── SAVE LIBRARY ─────────────────────────────────────────────────────────────
+async function saveLibrary() {
+  if (!libActiveFile || !libCurrentData) return;
+  libCurrentData.library.id = document.getElementById('lib-id-input').value.trim();
+  const desc = document.getElementById('lib-desc-input').value.trim();
+  if (desc) libCurrentData.library.description = desc; else delete libCurrentData.library.description;
+  if (libCurrentModelId) {
+    const model = getModels().find(m => m.id === libCurrentModelId);
+    if (model) {
+      const newId = document.getElementById('lib-model-id-input').value.trim();
+      if (newId) { model.id = newId; libCurrentModelId = newId; }
+      const newDesc = document.getElementById('lib-model-desc-input').value.trim();
+      if (newDesc) model.description = newDesc; else delete model.description;
+    }
+  }
+  // Rebuild with port-types before models to guarantee YAML key order
+  const lib = libCurrentData.library;
+  const ordered = { library: { id: lib.id } };
+  if (lib.description) ordered.library.description = lib.description;
+  ordered.library['port-types'] = lib['port-types'] || [];
+  ordered.library.models = lib.models || [];
+  const res = await fetch('/api/library', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ study: currentStudy, file: libActiveFile, data: ordered }),
+  });
+  const data = await res.json();
+  if (data.status === 'ok') {
+    libDirty = false;
+    document.getElementById('lib-dirty-badge').style.display = 'none';
+    log(`Library saved: ${libActiveFile}`, 'ok');
+    const mRes = await fetch(`/api/models?study=${currentStudy}`);
+    modelsData = await mRes.json();
+    buildPalette();
+  } else {
+    log(`Save failed: ${JSON.stringify(data)}`, 'err');
+  }
+}
+
+// ── NEW LIBRARY ───────────────────────────────────────────────────────────────
+async function newLibrary() {
+  const name = prompt('Library filename (without .yml):');
+  if (!name) return;
+  const filename = name.endsWith('.yml') ? name : name + '.yml';
+  const libId    = filename.replace('.yml', '');
+  const newData  = { library: { id: libId, 'port-types': [], models: [] } };
+  const res = await fetch('/api/library', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ study: currentStudy, file: filename, data: newData }),
+  });
+  const data = await res.json();
+  if (data.status === 'ok') {
+    log(`Created: ${filename}`, 'ok');
+    await loadLibraryFiles();
+    selectLibrary(filename);
+    const mRes = await fetch(`/api/models?study=${currentStudy}`);
+    modelsData = await mRes.json();
+    buildPalette();
+  } else {
+    log(`Failed: ${JSON.stringify(data)}`, 'err');
+  }
+}
+
+// ══════════════════════════════════════════════
+//  NEW STUDY
+// ══════════════════════════════════════════════
+async function deleteCurrentStudy() {
+  if (!confirm(`Delete study "${currentStudy}" permanently? This cannot be undone.`)) return;
+  const res  = await fetch(`/api/studies/${encodeURIComponent(currentStudy)}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  log(`Deleted study: ${currentStudy}`, 'warn');
+  await loadStudiesList();
+  const sel = document.getElementById('study-select');
+  if (sel.options.length) loadStudy(sel.value);
+}
+
+// ── NEW DATA SERIES ───────────────────────────────────────────────────────────
+function openNewSeriesModal() {
+  document.getElementById('ns-series-name').value = '';
+  document.getElementById('ns-series-rows').value = paramsData['last-time-step'] != null
+    ? paramsData['last-time-step'] - (paramsData['first-time-step'] || 0) + 1 : 168;
+  document.getElementById('ns-series-cols').value = '1';
+  document.getElementById('ns-series-fill').value = '0';
+  document.getElementById('new-series-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('ns-series-name').focus(), 50);
+}
+
+function closeNewSeriesModal() {
+  document.getElementById('new-series-modal').style.display = 'none';
+}
+
+async function confirmNewSeries() {
+  const name = document.getElementById('ns-series-name').value.trim();
+  const rows = parseInt(document.getElementById('ns-series-rows').value) || 168;
+  const cols = parseInt(document.getElementById('ns-series-cols').value) || 1;
+  const fill = parseFloat(document.getElementById('ns-series-fill').value) || 0;
+  if (!name) { alert('Series name is required'); return; }
+  // Build empty rows
+  const data = Array.from({length: rows}, () => Array.from({length: cols}, () => String(fill)));
+  const res  = await fetch('/api/timeseries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ study: currentStudy, file: name, rows: data }),
+  });
+  const json = await res.json();
+  if (json.status === 'ok') {
+    closeNewSeriesModal();
+    log(`Created: ${name}.csv (${rows} rows × ${cols} cols)`, 'ok');
+    dataSeries = [...dataSeries, name].sort();
+    await loadDataFiles();
+    loadDataFile(name);
+  } else {
+    log(`Failed: ${JSON.stringify(json)}`, 'err');
+  }
+}
+
+function openNewStudyModal() {
+  document.getElementById('ns-name').value   = '';
+  document.getElementById('ns-solver').value = 'coin';
+  document.getElementById('ns-first').value  = '0';
+  document.getElementById('ns-last').value   = '167';
+  document.getElementById('new-study-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('ns-name').focus(), 50);
+}
+
+function closeNewStudyModal() {
+  document.getElementById('new-study-modal').style.display = 'none';
+}
+
+async function confirmNewStudy() {
+  const name   = document.getElementById('ns-name').value.trim();
+  const solver = document.getElementById('ns-solver').value;
+  const first  = parseInt(document.getElementById('ns-first').value) || 0;
+  const last   = parseInt(document.getElementById('ns-last').value)  || 167;
+  if (!name) { alert('Study name is required'); return; }
+  const res  = await fetch('/api/studies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, solver, 'first-time-step': first, 'last-time-step': last }),
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  closeNewStudyModal();
+  log(`Study created: ${name}`, 'ok');
+  await loadStudiesList();
+  document.getElementById('study-select').value = name;
+  loadStudy(name);
+}
+
+// ── HTML escape utility ───────────────────────────────────────────────────────
+function esc(str) {
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

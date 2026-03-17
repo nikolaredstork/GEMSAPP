@@ -1,0 +1,15 @@
+antares-9.3.2-Ubuntu-22.04/
+GEMS-STS-Test/
+GEMS-Thermal-Test2/
+.claude/
+
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.env
+*.log
