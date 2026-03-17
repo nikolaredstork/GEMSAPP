@@ -312,6 +312,23 @@
     .lib-item span   { flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
     .lib-item .del   { background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;line-height:1; }
     .lib-item .del:hover { color:var(--red); }
+    .lib-item .math-btn { background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 4px;line-height:1; }
+    .lib-item .math-btn:hover { color:var(--accent); }
+
+    /* Math view modal */
+    #math-modal .modal { width:720px;max-width:96vw;max-height:90vh; }
+    .math-section { margin-bottom:18px; }
+    .math-section-title {
+      font-size:10px;text-transform:uppercase;letter-spacing:.8px;
+      color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:8px;
+    }
+    .math-table { width:100%;border-collapse:collapse;font-size:12px; }
+    .math-table td { padding:3px 8px 3px 0;vertical-align:top; }
+    .math-table td:first-child { color:var(--muted);white-space:nowrap;padding-right:16px;font-family:monospace; }
+    .math-badge { font-size:10px;padding:1px 5px;border-radius:3px;background:var(--surface2);color:var(--muted);margin-left:4px; }
+    .math-expr { font-family:monospace;font-size:12px;color:var(--text);background:var(--bg);padding:3px 8px;border-radius:4px;margin-bottom:4px; }
+    .math-constraint-id { color:var(--muted);font-size:10px;margin-right:6px; }
+    .math-obj { font-family:monospace;font-size:13px;color:var(--text);background:var(--bg);padding:6px 10px;border-radius:4px;border-left:3px solid var(--accent); }
 
     /* Right: model editor */
     #lib-model-editor { flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg); }
@@ -839,6 +856,20 @@
     <div class="modal-footer">
       <button class="btn" onclick="closeNewStudyModal()">Cancel</button>
       <button class="btn primary" onclick="confirmNewStudy()">Create Study</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MATH VIEW MODAL ───────────────────────────────────────────────── -->
+<div id="math-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="math-modal-title">Model: </h3>
+      <button onclick="document.getElementById('math-modal').style.display='none'">✕</button>
+    </div>
+    <div class="modal-body" id="math-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="document.getElementById('math-modal').style.display='none'">Close</button>
     </div>
   </div>
 </div>
@@ -2417,8 +2448,105 @@ function renderModels() {
   inner.innerHTML = models.map(m => `
     <div class="lib-item${m.id===libCurrentModelId?' active':''}" onclick="selectModel('${m.id}')">
       <span>${m.id}</span>
+      <button class="math-btn" onclick="event.stopPropagation();showMathView('${m.id}')" title="Math view">∑</button>
       <button class="del" onclick="event.stopPropagation();deleteModel('${m.id}')" title="Delete">✕</button>
     </div>`).join('');
+}
+
+function showMathView(modelId) {
+  const model = getModels().find(m => m.id === modelId);
+  if (!model) return;
+
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  function badge(param) {
+    const tags = [];
+    if (param['time-dependent'])     tags.push('time');
+    if (param['scenario-dependent']) tags.push('scenario');
+    return tags.map(t => `<span class="math-badge">${t}</span>`).join('');
+  }
+
+  function boundsStr(v) {
+    const lo = v['lower-bound'] != null ? esc(v['lower-bound']) : '-∞';
+    const hi = v['upper-bound'] != null ? esc(v['upper-bound']) : '+∞';
+    return `[${lo}, ${hi}]`;
+  }
+
+  let html = '';
+
+  // Parameters
+  const params = model.parameters || [];
+  if (params.length) {
+    html += `<div class="math-section">
+      <div class="math-section-title">Parameters</div>
+      <table class="math-table">`;
+    params.forEach(p => {
+      html += `<tr><td>${esc(p.id)}</td><td>${badge(p)}</td></tr>`;
+    });
+    html += `</table></div>`;
+  }
+
+  // Decision Variables
+  const vars = model.variables || [];
+  if (vars.length) {
+    html += `<div class="math-section">
+      <div class="math-section-title">Decision Variables</div>
+      <table class="math-table">`;
+    vars.forEach(v => {
+      html += `<tr>
+        <td>${esc(v.id)}</td>
+        <td>${boundsStr(v)}</td>
+        <td><span class="math-badge">${esc(v['variable-type'] || 'continuous')}</span></td>
+      </tr>`;
+    });
+    html += `</table></div>`;
+  }
+
+  // Objective
+  const obj = model['objective-contributions'] || [];
+  if (obj.length) {
+    html += `<div class="math-section">
+      <div class="math-section-title">Objective (minimize)</div>`;
+    obj.forEach(o => {
+      html += `<div class="math-obj">min &Sigma;<sub>t</sub> [ ${esc(o.expression)} ]</div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Constraints
+  const cons = model.constraints || [];
+  const bcons = model['binding-constraints'] || [];
+  if (cons.length || bcons.length) {
+    html += `<div class="math-section">
+      <div class="math-section-title">Constraints</div>`;
+    [...cons, ...bcons].forEach(c => {
+      html += `<div class="math-expr">
+        <span class="math-constraint-id">(${esc(c.id)})</span>${esc(c.expression)}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Port field definitions
+  const pfd = model['port-field-definitions'] || [];
+  if (pfd.length) {
+    html += `<div class="math-section">
+      <div class="math-section-title">Port Field Definitions</div>
+      <table class="math-table">`;
+    pfd.forEach(d => {
+      html += `<tr>
+        <td>${esc(d.port)}.${esc(d.field)}</td>
+        <td>= ${esc(d.definition)}</td>
+      </tr>`;
+    });
+    html += `</table></div>`;
+  }
+
+  if (!html) html = `<div style="color:var(--muted);font-size:12px;">No mathematical content defined for this model.</div>`;
+
+  document.getElementById('math-modal-title').textContent = 'Model: ' + modelId;
+  document.getElementById('math-modal-body').innerHTML = html;
+  document.getElementById('math-modal').style.display = 'flex';
 }
 
 function startAddModel() {
