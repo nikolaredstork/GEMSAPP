@@ -1,22 +1,22 @@
 # GEMSAPP
 
-Web aplikacija za editovanje i simulaciju elektroenergetskih sistema zasnovana na Flask backendu i vis-network frontendu. Koristi Antares Modeler kao simulacioni engine.
+A web application for editing and simulating power systems, built on a Flask backend and vis-network frontend. Uses Antares Modeler as the simulation engine.
 
-## Zahtevi
+## Requirements
 
 - Python 3.9+
-- Antares Modeler binarni fajl (nije uključen u repo)
+- Antares Modeler binary (not included in the repository)
 
-## Instalacija
+## Installation
 
-### 1. Kloniraj repozitorijum
+### 1. Clone the repository
 
 ```bash
 git clone git@github.com:nikolaredstork/GEMSAPP.git
 cd GEMSAPP
 ```
 
-### 2. Kreiraj virtuelno okruženje i instaliraj zavisnosti
+### 2. Create a virtual environment and install dependencies
 
 ```bash
 python3 -m venv venv
@@ -24,20 +24,20 @@ source venv/bin/activate
 pip install flask flask-socketio pyyaml
 ```
 
-### 3. Postavi Antares Modeler
+### 3. Set up Antares Modeler
 
-Preuzmi i raspauj Antares binarni paket u root folder projekta tako da putanja bude:
+Download and extract the Antares binary package into the project root so that the path is:
 
 ```
 GEMSAPP/antares-9.3.2-Ubuntu-22.04/bin/antares-modeler
 ```
 
-### 4. Pripremi studiju
+### 4. Prepare a study
 
-U root folderu projekta mora postojati bar jedna studija. Struktura studije:
+At least one study must exist in the project root. Study structure:
 
 ```
-MojaStudija/
+MyStudy/
 ├── parameters.yml
 ├── input/
 │   ├── system.yml
@@ -46,22 +46,22 @@ MojaStudija/
 └── output/
 ```
 
-Novu studiju možeš kreirati direktno kroz web interfejs.
+New studies can also be created directly through the web interface.
 
-## Pokretanje
+## Running
 
 ```bash
 source venv/bin/activate
 python app.py
 ```
 
-Otvori browser na [http://localhost:5000](http://localhost:5000).
+Open your browser at [http://localhost:5000](http://localhost:5000).
 
-## Upotreba
+## Usage
 
-- **Studije** — kreiraj, učitaj ili obriši studije iz padajućeg menija
-- **Editor** — dodaj komponente i konekcije u sistem vizuelno (drag & drop)
-- **Biblioteke modela** — uvezi i uređuj YAML biblioteke modela
-- **Vremenske serije** — učitaj CSV fajlove sa ulaznim podacima
-- **Simulacija** — pokreni Antares Modeler i prati log u realnom vremenu
-- **Rezultati** — pregledaj i preuzmi izlazne CSV fajlove
+- **Studies** — create, load, or delete studies from the dropdown menu
+- **Editor** — add components and connections to the system visually (drag & drop)
+- **Model libraries** — import and edit YAML model library files
+- **Time series** — upload CSV files with input data
+- **Simulation** — run Antares Modeler and monitor the log in real time
+- **Results** — browse and download output CSV files
