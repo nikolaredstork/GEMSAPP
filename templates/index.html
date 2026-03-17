@@ -904,16 +904,30 @@ const MODEL_STYLE = {
 };
 
 // Fallback pool for custom model types (deterministic by model id hash)
-const FALLBACK_STYLES = [
-  { shape: 'box',      bg: '#1a2a3a', border: '#58a6ff', icon: '▣', cls: '' },
-  { shape: 'diamond',  bg: '#2a1a3a', border: '#bc8cff', icon: '◆', cls: '' },
-  { shape: 'ellipse',  bg: '#1a3a2a', border: '#3fb950', icon: '◎', cls: '' },
-  { shape: 'dot',      bg: '#3a2a1a', border: '#f0883e', icon: '●', cls: '' },
-  { shape: 'database', bg: '#1a3a3a', border: '#39c5cf', icon: '▤', cls: '' },
-  { shape: 'triangle', bg: '#3a1a1a', border: '#f85149', icon: '▲', cls: '' },
-  { shape: 'box',      bg: '#2a3a1a', border: '#e3b341', icon: '⬛', cls: '' },
-  { shape: 'diamond',  bg: '#3a1a2a', border: '#ff7b72', icon: '◇', cls: '' },
+const FALLBACK_SHAPES = [
+  { shape: 'box',      icon: '▣' },
+  { shape: 'diamond',  icon: '◆' },
+  { shape: 'ellipse',  icon: '◎' },
+  { shape: 'dot',      icon: '●' },
+  { shape: 'database', icon: '▤' },
+  { shape: 'triangle', icon: '▲' },
+  { shape: 'box',      icon: '⬛' },
+  { shape: 'diamond',  icon: '◇' },
 ];
+
+function fallbackStyle(type) {
+  const h = strHash(type);
+  const hue = (h * 137) % 360; // golden-angle spread — maximises hue distance between consecutive hashes
+  const border = `hsl(${hue},70%,60%)`;
+  const bg     = `hsl(${hue},50%,12%)`;
+  const { shape, icon } = FALLBACK_SHAPES[h % FALLBACK_SHAPES.length];
+  return { shape, icon, border, bg, cls: '', label: type };
+}
+
+function iconStyle(s) {
+  if (s.cls) return '';
+  return `style="color:${s.border};border-color:${s.border};background:${s.bg};"`;
+}
 
 function strHash(s) {
   let h = 0;
@@ -937,9 +951,7 @@ function styleOf(type) {
     return { ...MODEL_STYLE['link'], label: type };
   if (t.includes('bus') || t.includes('area') || t.includes('node') || t.includes('hub'))
     return { ...MODEL_STYLE['area'], label: type };
-  // Deterministic fallback from pool
-  const fb = FALLBACK_STYLES[strHash(type) % FALLBACK_STYLES.length];
-  return { ...fb, label: type };
+  return fallbackStyle(type);
 }
 
 function visNode(comp, type, pos) {
@@ -1092,7 +1104,7 @@ function buildPalette() {
     const s = styleOf(m.id);
     return `
       <div class="model-item" onclick="openAddModal('${m.id}')" title="Click to add a ${m.id} component">
-        <div class="model-icon ${s.cls}">${s.icon}</div>
+        <div class="model-icon ${s.cls}" ${iconStyle(s)}>${s.icon}</div>
         <div>
           <div class="model-label">${s.label || m.id}</div>
           <div class="model-desc">${m.id}</div>
@@ -2189,7 +2201,7 @@ function buildPalette() {
     models.forEach(m => {
       const s = styleOf(m.id);
       html += `<div class="model-item" onclick="openAddModal('${libId}','${m.id}')" title="Add ${m.id}">
-        <div class="model-icon ${s.cls}">${s.icon}</div>
+        <div class="model-icon ${s.cls}" ${iconStyle(s)}>${s.icon}</div>
         <div><div class="model-label">${s.label || m.id}</div><div class="model-desc">${m.id}</div></div>
       </div><div class="palette-sep"></div>`;
     });
@@ -2454,7 +2466,15 @@ function renderModels() {
 }
 
 function showMathView(modelId) {
-  const model = getModels().find(m => m.id === modelId);
+  let model = null;
+  if (modelsData && modelsData.libraries) {
+    for (const lib of Object.values(modelsData.libraries)) {
+      const models = (lib.data && lib.data.library && lib.data.library.models) || [];
+      model = models.find(m => m.id === modelId);
+      if (model) break;
+    }
+  }
+  if (!model) model = getModels().find(m => m.id === modelId);
   if (!model) return;
 
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

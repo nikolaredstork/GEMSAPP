@@ -50,6 +50,17 @@ def load_all_libraries(lib_dir):
     return libraries
 
 
+def require_study(source='args'):
+    """Extract and validate study_id from request. Returns (study_id, None) or (None, error_response)."""
+    if source == 'args':
+        study_id = request.args.get('study', '').strip()
+    else:
+        study_id = (request.json or {}).get('study', '').strip()
+    if not study_id:
+        return None, (jsonify({'error': 'study parameter is required'}), 400)
+    return study_id, None
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -119,17 +130,18 @@ def create_study():
 
 @app.route('/api/models')
 def get_models():
-    """Return all libraries for a study."""
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
-    paths    = get_study_paths(study_id)
+    study_id, err = require_study()
+    if err: return err
+    paths = get_study_paths(study_id)
     return jsonify({'libraries': load_all_libraries(paths['lib_dir'])})
 
 
 @app.route('/api/libraries')
 def list_libraries():
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
-    paths    = get_study_paths(study_id)
-    lib_dir  = paths['lib_dir']
+    study_id, err = require_study()
+    if err: return err
+    paths   = get_study_paths(study_id)
+    lib_dir = paths['lib_dir']
     if not os.path.isdir(lib_dir):
         return jsonify([])
     files = sorted(f for f in os.listdir(lib_dir) if f.endswith('.yml') or f.endswith('.yaml'))
@@ -138,7 +150,8 @@ def list_libraries():
 
 @app.route('/api/library')
 def get_library():
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study()
+    if err: return err
     filename = request.args.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
@@ -153,8 +166,9 @@ def get_library():
 
 @app.route('/api/library', methods=['POST'])
 def save_library():
+    study_id, err = require_study('json')
+    if err: return err
     req      = request.json
-    study_id = req.get('study', 'GEMS-Thermal-Test2')
     filename = req.get('file')
     lib_data = req.get('data')
     if not filename or not lib_data:
@@ -169,7 +183,8 @@ def save_library():
 
 @app.route('/api/system')
 def get_system():
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study()
+    if err: return err
     paths = get_study_paths(study_id)
 
     with open(paths['system'], 'r') as f:
@@ -201,21 +216,19 @@ def get_system():
 
 @app.route('/api/system', methods=['POST'])
 def save_system():
-    data = request.json
-    study_id = data.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study('json')
+    if err: return err
+    data  = request.json
     paths = get_study_paths(study_id)
 
-    # Save system.yml
     with open(paths['system'], 'w') as f:
         yaml.dump(data['system'], f, default_flow_style=False,
                   sort_keys=False, allow_unicode=True)
 
-    # Save layout sidecar
     if 'layout' in data:
         with open(paths['layout'], 'w') as f:
             json.dump(data['layout'], f, indent=2)
 
-    # Save params
     if 'params' in data:
         with open(paths['params'], 'w') as f:
             yaml.dump(data['params'], f, default_flow_style=False,
@@ -231,8 +244,8 @@ def run_simulation():
     if simulation_running:
         return jsonify({'error': 'Simulation already running'}), 400
 
-    data = request.json or {}
-    study_id = data.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study('json')
+    if err: return err
     paths = get_study_paths(study_id)
 
     if not os.path.exists(MODELER_EXE):
@@ -293,7 +306,8 @@ def sim_status():
 
 @app.route('/api/results')
 def list_results():
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study()
+    if err: return err
     output_dir = os.path.join(BASE_DIR, study_id, 'output')
     if not os.path.isdir(output_dir):
         return jsonify([])
@@ -306,7 +320,8 @@ def list_results():
 
 @app.route('/api/results/meta')
 def results_meta():
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study()
+    if err: return err
     filename = request.args.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
@@ -336,7 +351,8 @@ def results_meta():
 
 @app.route('/api/results/series')
 def results_series():
-    study_id  = request.args.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study()
+    if err: return err
     filename  = request.args.get('file')
     component = request.args.get('component')
     output    = request.args.get('output')
@@ -369,7 +385,8 @@ def results_series():
 
 @app.route('/api/timeseries/list')
 def list_timeseries():
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study()
+    if err: return err
     paths = get_study_paths(study_id)
     if not os.path.isdir(paths['data_series']):
         return jsonify([])
@@ -379,7 +396,8 @@ def list_timeseries():
 
 @app.route('/api/timeseries')
 def get_timeseries():
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study()
+    if err: return err
     filename = request.args.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
@@ -396,8 +414,9 @@ def get_timeseries():
 
 @app.route('/api/timeseries', methods=['DELETE'])
 def delete_timeseries():
+    study_id, err = require_study('json')
+    if err: return err
     data     = request.json
-    study_id = data.get('study', 'GEMS-Thermal-Test2')
     filename = data.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
@@ -411,8 +430,9 @@ def delete_timeseries():
 
 @app.route('/api/library', methods=['DELETE'])
 def delete_library():
+    study_id, err = require_study('json')
+    if err: return err
     data     = request.json
-    study_id = data.get('study', 'GEMS-Thermal-Test2')
     filename = data.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
@@ -426,8 +446,9 @@ def delete_library():
 
 @app.route('/api/timeseries', methods=['POST'])
 def save_timeseries():
+    study_id, err = require_study('json')
+    if err: return err
     data     = request.json
-    study_id = data.get('study', 'GEMS-Thermal-Test2')
     filename = data.get('file')
     rows     = data.get('rows', [])
     if not filename:
@@ -441,7 +462,8 @@ def save_timeseries():
 
 @app.route('/api/results/download')
 def download_result():
-    study_id = request.args.get('study', 'GEMS-Thermal-Test2')
+    study_id, err = require_study()
+    if err: return err
     filename = request.args.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
