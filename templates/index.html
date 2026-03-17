@@ -92,13 +92,6 @@
 
     .palette-sep { height: 1px; background: var(--border); margin: 8px 10px; }
 
-    /* Colors per type */
-    .type-area    { color: #4a9eff; border-color: #4a9eff; background: rgba(74,158,255,.15); }
-    .type-load    { color: var(--red); border-color: var(--red); background: rgba(248,81,73,.15); }
-    .type-thermal { color: var(--orange); border-color: var(--orange); background: rgba(240,136,62,.15); }
-    .type-renewable { color: var(--green); border-color: var(--green); background: rgba(63,185,80,.15); }
-    .type-link    { color: var(--purple); border-color: var(--purple); background: rgba(188,140,255,.15); }
-    .type-short-term-storage { color: var(--teal); border-color: var(--teal); background: rgba(57,197,207,.15); }
 
     /* ── CANVAS ── */
     #canvas-wrap {
@@ -894,16 +887,7 @@ let pendingModelDef  = null;
 // ══════════════════════════════════════════════
 //  MODEL VISUAL STYLES
 // ══════════════════════════════════════════════
-const MODEL_STYLE = {
-  'area':               { shape: 'ellipse',  bg: '#1a3a5c', border: '#4a9eff', icon: '⬡', cls: 'type-area',     label: 'Area / Bus' },
-  'load':               { shape: 'triangle', bg: '#3d1a1a', border: '#f85149', icon: '▼', cls: 'type-load',     label: 'Load' },
-  'thermal':            { shape: 'box',      bg: '#3d2a10', border: '#f0883e', icon: '⚙', cls: 'type-thermal',  label: 'Thermal' },
-  'renewable':          { shape: 'diamond',  bg: '#102a1a', border: '#3fb950', icon: '♻', cls: 'type-renewable',label: 'Renewable' },
-  'link':               { shape: 'dot',      bg: '#2a1a3d', border: '#bc8cff', icon: '↔', cls: 'type-link',     label: 'Link / Line' },
-  'short-term-storage': { shape: 'database', bg: '#0f2a2c', border: '#39c5cf', icon: '▦', cls: 'type-short-term-storage', label: 'Storage' },
-};
-
-// Fallback pool for custom model types (deterministic by model id hash)
+// Shapes pool for deterministic assignment by model id hash
 const FALLBACK_SHAPES = [
   { shape: 'box',      icon: '▣' },
   { shape: 'diamond',  icon: '◆' },
@@ -925,7 +909,6 @@ function fallbackStyle(type) {
 }
 
 function iconStyle(s) {
-  if (s.cls) return '';
   return `style="color:${s.border};border-color:${s.border};background:${s.bg};"`;
 }
 
@@ -936,21 +919,6 @@ function strHash(s) {
 }
 
 function styleOf(type) {
-  if (MODEL_STYLE[type]) return MODEL_STYLE[type];
-  // Keyword inference
-  const t = type.toLowerCase();
-  if (t.includes('thermal') || t.includes('generator') || t.includes('plant') || t.includes('gas') || t.includes('coal') || t.includes('nuclear'))
-    return { ...MODEL_STYLE['thermal'], label: type };
-  if (t.includes('load') || t.includes('demand') || t.includes('consumption'))
-    return { ...MODEL_STYLE['load'], label: type };
-  if (t.includes('wind') || t.includes('solar') || t.includes('pv') || t.includes('renew') || t.includes('hydro'))
-    return { ...MODEL_STYLE['renewable'], label: type };
-  if (t.includes('storage') || t.includes('battery') || t.includes('reservoir'))
-    return { ...MODEL_STYLE['short-term-storage'], label: type };
-  if (t.includes('link') || t.includes('line') || t.includes('cable') || t.includes('connect') || t.includes('transmit'))
-    return { ...MODEL_STYLE['link'], label: type };
-  if (t.includes('bus') || t.includes('area') || t.includes('node') || t.includes('hub'))
-    return { ...MODEL_STYLE['area'], label: type };
   return fallbackStyle(type);
 }
 
