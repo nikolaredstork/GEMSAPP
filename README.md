@@ -57,6 +57,35 @@ python app.py
 
 Open your browser at [http://localhost:5000](http://localhost:5000).
 
+## Stopping the app
+
+Press **Ctrl+C** in the terminal where the app is running.
+
+If it's running in the background (Linux/macOS):
+
+```bash
+kill $(lsof -t -i :5000)
+```
+
+On Windows:
+
+```cmd
+netstat -ano | findstr :5000
+taskkill /PID <PID> /F
+```
+
+## Windows compatibility
+
+The web interface works on Windows, but there are a few differences:
+
+- **Virtual environment activation:**
+
+  ```cmd
+  venv\Scripts\activate
+  ```
+
+- **Antares Modeler:** the binary included (`antares-9.3.2-Ubuntu-22.04`) is a Linux binary and will not run on Windows. A Windows build of Antares Modeler is required for simulation.
+
 ## Usage
 
 - **Studies** — create, load, or delete studies from the dropdown menu
