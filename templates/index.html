@@ -2635,10 +2635,10 @@ function renderParamsSection(model) {
   const items = model.parameters || [];
   let h = `<button class="btn" style="margin-bottom:8px;" onclick="libAddItem('parameters')">+ Add Parameter</button>`;
   if (!items.length) { h += `<div style="color:var(--muted);font-size:11px;padding:4px 0;">No parameters defined</div>`; return h; }
-  h += `<table class="sec-tbl"><thead><tr><th>ID</th><th>Description</th><th title="time-dependent">T</th><th title="scenario-dependent">S</th><th></th></tr></thead><tbody>`;
+  h += `<table class="sec-tbl"><thead><tr><th>ID</th><th title="time-dependent">T</th><th title="scenario-dependent">S</th><th></th></tr></thead><tbody>`;
   items.forEach((p, i) => {
     h += `<tr style="cursor:pointer" onclick="libEditItem('parameters',${i})">
-      <td><code>${esc(p.id)}</code></td><td>${esc(p.description||'')}</td>
+      <td><code>${esc(p.id)}</code></td>
       <td><span class="${p['time-dependent']?'bool-yes':'bool-no'}">${p['time-dependent']?'\u2714':'\u2013'}</span></td>
       <td><span class="${p['scenario-dependent']?'bool-yes':'bool-no'}">${p['scenario-dependent']?'\u2714':'\u2013'}</span></td>
       <td class="act-cell"><button onclick="event.stopPropagation();libDeleteItem('parameters',${i})" title="Delete">\u2715</button></td></tr>`;
