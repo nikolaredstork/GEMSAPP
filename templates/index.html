@@ -47,7 +47,8 @@
       display: flex; align-items: center; gap: 8px; padding: 0 12px;
       flex-shrink: 0;
     }
-    #header h1 { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 1px; margin-right: 8px; }
+    #gems-logo { display:flex; align-items:center; gap:7px; margin-right:8px; text-decoration:none; }
+    #gems-logo span { font-size:15px; font-weight:700; color:var(--accent); letter-spacing:1px; }
     #study-select { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
     .sep { flex: 1; }
     .btn { padding: 5px 14px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 12px; cursor: pointer; transition: .15s; }
@@ -96,8 +97,14 @@
     /* ── CANVAS ── */
     #canvas-wrap {
       flex: 1; position: relative; overflow: hidden;
+      background-color: #0b1017;
+      background-image:
+        radial-gradient(circle, rgba(74,158,255,.18) 1px, transparent 1px),
+        radial-gradient(circle, rgba(74,158,255,.06) 1px, transparent 1px);
+      background-size: 30px 30px, 6px 6px;
+      background-position: 0 0, 15px 15px;
     }
-    #network { width: 100%; height: 100%; }
+    #network { width: 100%; height: 100%; background: transparent; }
 
     #canvas-hint {
       position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
@@ -453,7 +460,17 @@
 
 <!-- ═══════════════════ HEADER ═══════════════════ -->
 <div id="header">
-  <h1>⚡ GEMS</h1>
+  <div id="gems-logo">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- hexagon background -->
+      <polygon points="14,2 25,8 25,20 14,26 3,20 3,8" fill="#0d1117" stroke="#4a9eff" stroke-width="1.5"/>
+      <!-- lightning bolt -->
+      <polygon points="16,4 10,15 14,15 12,24 18,13 14,13" fill="#4a9eff"/>
+      <!-- outer glow ring -->
+      <polygon points="14,2 25,8 25,20 14,26 3,20 3,8" fill="none" stroke="#4a9eff" stroke-width="0.5" opacity="0.4"/>
+    </svg>
+    <span>GEMS</span>
+  </div>
   <select id="study-select" onchange="loadStudy(this.value)"></select>
   <button class="btn" onclick="openNewStudyModal()" title="Create new study" style="padding:4px 10px;">⊕ New</button>
   <button class="btn danger" onclick="deleteCurrentStudy()" title="Delete current study" style="padding:4px 10px;">🗑</button>
@@ -887,25 +904,16 @@ let pendingModelDef  = null;
 // ══════════════════════════════════════════════
 //  MODEL VISUAL STYLES
 // ══════════════════════════════════════════════
-// Shapes pool for deterministic assignment by model id hash
-const FALLBACK_SHAPES = [
-  { shape: 'box',      icon: '▣' },
-  { shape: 'diamond',  icon: '◆' },
-  { shape: 'ellipse',  icon: '◎' },
-  { shape: 'dot',      icon: '●' },
-  { shape: 'database', icon: '▤' },
-  { shape: 'triangle', icon: '▲' },
-  { shape: 'box',      icon: '⬛' },
-  { shape: 'diamond',  icon: '◇' },
-];
+// Palette icons for sidebar (shape is always box on canvas)
+const FALLBACK_ICONS = ['▣', '◆', '◎', '●', '▤', '▲', '⬛', '◇'];
 
 function fallbackStyle(type) {
   const h = strHash(type);
-  const hue = (h * 137) % 360; // golden-angle spread — maximises hue distance between consecutive hashes
-  const border = `hsl(${hue},70%,60%)`;
-  const bg     = `hsl(${hue},50%,12%)`;
-  const { shape, icon } = FALLBACK_SHAPES[h % FALLBACK_SHAPES.length];
-  return { shape, icon, border, bg, cls: '', label: type };
+  const hue    = (h * 137) % 360; // golden-angle spread — maximises hue distance
+  const border = `hsl(${hue},55%,52%)`;
+  const bg     = `hsl(${hue},30%,10%)`;
+  const icon   = FALLBACK_ICONS[h % FALLBACK_ICONS.length];
+  return { shape: 'box', icon, border, bg, cls: '', label: type };
 }
 
 function iconStyle(s) {
@@ -926,14 +934,21 @@ function visNode(comp, type, pos) {
   const s = styleOf(type);
   return {
     id:    comp.id,
-    label: comp.id,
-    title: `${comp.id} [${type}]`,
-    shape: s.shape,
-    color: { background: s.bg, border: s.border, highlight: { background: s.bg, border: '#fff' }, hover: { background: s.bg, border: s.border } },
-    font:  { color: '#c9d1d9', size: 12, face: 'Consolas, monospace' },
-    borderWidth: 2,
-    borderWidthSelected: 3,
-    size: (s.shape === 'ellipse') ? 35 : 22,
+    label: `${comp.id}\n[${type}]`,
+    title: `${comp.id} · ${type}`,
+    shape: 'box',
+    color: {
+      background: s.bg,
+      border:     s.border,
+      highlight:  { background: s.bg, border: s.border },
+      hover:      { background: `hsl(${strHash(type)*137%360},30%,16%)`, border: s.border },
+    },
+    font:  { color: '#cdd9e5', size: 11, face: 'Consolas, monospace', multi: false },
+    borderWidth: 1.5,
+    borderWidthSelected: 2.5,
+    shadow: { enabled: false },
+    shapeProperties: { borderRadius: 3 },
+    margin: { top: 8, bottom: 8, left: 12, right: 12 },
     x: pos ? pos.x : undefined,
     y: pos ? pos.y : undefined,
     _type: type,
@@ -941,15 +956,23 @@ function visNode(comp, type, pos) {
 }
 
 function visEdge(conn, idx) {
+  const fromModel = (() => {
+    if (!systemData) return '';
+    const c = (systemData.system.components || []).find(c => c.id === conn.component1);
+    return c ? (c.model || '') : '';
+  })();
+  const edgeColor = styleOf(fromModel).border || '#4a9eff';
   return {
     id:    `e${idx}`,
     from:  conn.component1,
     to:    conn.component2,
-    label: `${conn.port1}↔${conn.port2}`,
-    color: { color: '#30363d', highlight: '#58a6ff', hover: '#58a6ff' },
-    font:  { color: '#8b949e', size: 9, align: 'middle', strokeWidth: 0 },
+    label: `${conn.port1} · ${conn.port2}`,
+    color: { color: edgeColor + 'aa', highlight: edgeColor, hover: edgeColor },
+    font:  { color: '#768390', size: 9, face: 'Consolas, monospace', align: 'middle', strokeWidth: 2, strokeColor: '#0b1017' },
     width: 1.5,
-    smooth: { type: 'curvedCW', roundness: 0.1 },
+    smooth: { type: 'dynamic' },
+    dashes: false,
+    shadow: { enabled: false },
     _port1: conn.port1,
     _port2: conn.port2,
   };
