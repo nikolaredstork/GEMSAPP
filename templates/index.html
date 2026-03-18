@@ -403,23 +403,25 @@
     .vt-btn.active { background:var(--surface2); color:var(--text); }
 
     /* ── SHARED DATA / RESULTS TABLE ── */
-    .data-table-wrap { flex:1; overflow:auto; }
-    .data-tbl { border-collapse:collapse; font-size:11px; font-family:'Consolas',monospace; min-width:100%; }
+    .data-table-wrap { flex:1; overflow:auto; padding:12px 16px; }
+    .data-tbl { border-collapse:collapse; font-size:11px; font-family:'Consolas',monospace; width:auto; }
     .data-tbl th {
-      position:sticky; top:0; background:var(--surface); border:1px solid var(--border);
-      padding:5px 10px; color:var(--muted); font-weight:600; text-align:right; white-space:nowrap; z-index:2;
+      position:sticky; top:0; background:var(--surface); border-bottom:2px solid var(--accent);
+      padding:6px 16px; color:var(--accent); font-weight:600; text-align:right; white-space:nowrap; z-index:2;
+      letter-spacing:.5px; text-transform:uppercase; font-size:10px;
     }
-    .data-tbl th.row-hdr { left:0; z-index:3; text-align:left; }
+    .data-tbl th.row-hdr { left:0; z-index:3; text-align:left; color:var(--muted); border-bottom:2px solid var(--border); }
     .data-tbl td {
-      border:1px solid var(--border); padding:3px 8px; text-align:right;
-      color:var(--text); white-space:nowrap;
+      border-bottom:1px solid var(--border); padding:4px 16px; text-align:right;
+      color:var(--text); white-space:nowrap; min-width:90px;
     }
     .data-tbl td.row-hdr {
       position:sticky; left:0; background:var(--surface); color:var(--muted);
-      font-weight:600; text-align:left; z-index:1;
+      font-weight:600; text-align:left; z-index:1; min-width:60px; padding-right:24px;
     }
     .data-tbl td[contenteditable]:focus { outline:2px solid var(--accent); background:var(--surface2); }
     .data-tbl td.dirty { background: rgba(88,166,255,.12); }
+    .data-tbl tr:nth-child(even) td { background:rgba(255,255,255,.02); }
     .data-tbl tr:hover td { background:var(--surface2); }
     .data-tbl tr:hover td.row-hdr { background:var(--surface); }
 
@@ -1815,7 +1817,7 @@ function initChart() {
           titleColor: '#c9d1d9', bodyColor: '#8b949e',
           padding: 8,
           callbacks: {
-            title: items => `Hour ${items[0].label}`,
+            title: items => `Time Step ${items[0].label}`,
           },
         },
         zoom: {
@@ -1839,7 +1841,7 @@ function initChart() {
             callback: val => `h${val}`,
           },
           grid:  { color: '#21262d' },
-          title: { display: true, text: 'Time step (hour)', color: '#8b949e', font: { size: 11 } },
+          title: { display: true, text: 'Time Step', color: '#8b949e', font: { size: 11 } },
         },
         y: {
           ticks: { color: '#8b949e', font: { size: 10 } },
@@ -1919,7 +1921,7 @@ function buildResTable() {
   tbl.style.display    = '';
 
   // Header
-  let html = '<thead><tr><th class="row-hdr">Hour</th>';
+  let html = '<thead><tr><th class="row-hdr">Time Step</th>';
   seriesStore.forEach(s => {
     html += `<th style="color:${s.color}">${s.label}</th>`;
   });
@@ -2043,7 +2045,7 @@ function renderDataChart() {
         },
       },
       scales: {
-        x: { type:'category', ticks: { color:'#8b949e', font:{size:10}, maxTicksLimit:24, callback: v=>`h${v}` }, grid:{color:'#21262d'}, title:{display:true,text:'Hour',color:'#8b949e'} },
+        x: { type:'category', ticks: { color:'#8b949e', font:{size:10}, maxTicksLimit:24, callback: v=>`t${v}` }, grid:{color:'#21262d'}, title:{display:true,text:'Time Step',color:'#8b949e'} },
         y: { ticks: { color:'#8b949e', font:{size:10} }, grid:{color:'#21262d'} },
       },
     },
@@ -2059,7 +2061,7 @@ function renderDataTable() {
     ? [activeDataFile]
     : Array.from({length: nCols}, (_, i) => `S${i}`);
 
-  let html = '<thead><tr><th class="row-hdr">Hour</th>';
+  let html = '<thead><tr><th class="row-hdr">Time Step</th>';
   colHeaders.forEach(h => { html += `<th>${h}</th>`; });
   html += '</tr></thead><tbody>';
 
