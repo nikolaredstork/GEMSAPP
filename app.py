@@ -31,6 +31,59 @@ def get_study_paths(study_id):
     }
 
 
+def normalize_library(lib_data):
+    """Rebuild the library dict with canonical key ordering so PyYAML outputs clean YAML."""
+    if not lib_data or 'library' not in lib_data:
+        return lib_data
+    src = lib_data['library']
+
+    def order(d, keys):
+        """Return a new dict with the given keys first, then any remaining keys."""
+        out = {}
+        for k in keys:
+            if k in d:
+                out[k] = d[k]
+        for k, v in d.items():
+            if k not in out:
+                out[k] = v
+        return out
+
+    def norm_list(items, first_keys):
+        return [order(item, first_keys) for item in (items or [])]
+
+    port_types = []
+    for pt in src.get('port-types', []):
+        npt = order(pt, ['id', 'description', 'fields', 'area-connection'])
+        port_types.append(npt)
+
+    models = []
+    for m in src.get('models', []):
+        nm = order(m, ['id', 'description', 'parameters', 'variables', 'ports',
+                        'port-field-definitions', 'constraints', 'binding-constraints',
+                        'objective-contributions', 'extra-outputs'])
+        if 'parameters' in nm:
+            nm['parameters'] = norm_list(nm['parameters'],
+                                         ['id', 'time-dependent', 'scenario-dependent'])
+        if 'variables' in nm:
+            nm['variables'] = norm_list(nm['variables'],
+                                        ['id', 'lower-bound', 'upper-bound', 'variable-type'])
+        if 'ports' in nm:
+            nm['ports'] = norm_list(nm['ports'], ['id', 'type'])
+        if 'port-field-definitions' in nm:
+            nm['port-field-definitions'] = norm_list(nm['port-field-definitions'],
+                                                     ['port', 'field', 'definition'])
+        for key in ('constraints', 'binding-constraints',
+                    'objective-contributions', 'extra-outputs'):
+            if key in nm:
+                nm[key] = norm_list(nm[key], ['id', 'expression', 'lower-bound', 'upper-bound'])
+        models.append(nm)
+
+    lib = order(src, ['id', 'description', 'port-types', 'models'])
+    lib['port-types'] = port_types
+    lib['models'] = models
+    return {'library': lib}
+
+
 def load_all_libraries(lib_dir):
     """Return dict {lib_id: {file, data}} for all YAML files in lib_dir."""
     libraries = {}
@@ -177,7 +230,7 @@ def save_library():
     os.makedirs(paths['lib_dir'], exist_ok=True)
     path = os.path.join(paths['lib_dir'], filename)
     with open(path, 'w') as f:
-        yaml.dump(lib_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.dump(normalize_library(lib_data), f, default_flow_style=False, sort_keys=False, allow_unicode=True)
     return jsonify({'status': 'ok'})
 
 

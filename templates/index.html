@@ -2869,16 +2869,10 @@ async function saveLibrary() {
       if (newDesc) model.description = newDesc; else delete model.description;
     }
   }
-  // Rebuild with port-types before models to guarantee YAML key order
-  const lib = libCurrentData.library;
-  const ordered = { library: { id: lib.id } };
-  if (lib.description) ordered.library.description = lib.description;
-  ordered.library['port-types'] = lib['port-types'] || [];
-  ordered.library.models = lib.models || [];
   const res = await fetch('/api/library', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ study: currentStudy, file: libActiveFile, data: ordered }),
+    body: JSON.stringify({ study: currentStudy, file: libActiveFile, data: libCurrentData }),
   });
   const data = await res.json();
   if (data.status === 'ok') {
