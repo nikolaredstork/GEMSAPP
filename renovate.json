@@ -1,5 +1,6 @@
 {
   "extends": ["config:base"],
+  "githubTokenSecret": "RENOVATE_TOKEN",
   "customManagers": [
     {
       "customType": "regex",
