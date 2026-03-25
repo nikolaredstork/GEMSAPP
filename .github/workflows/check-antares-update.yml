@@ -89,47 +89,51 @@ jobs:
           LATEST="${{ steps.latest.outputs.version }}"
           CURRENT="${{ steps.current.outputs.version }}"
 
+          cat > /tmp/issue-body.md << EOF
+          ## New Version Detected
+
+          A new version of Antares Simulator has been detected.
+
+          | | |
+          |---|---|
+          | **Previous version** | \`${CURRENT}\` |
+          | **New version** | \`${LATEST}\` |
+          | **Release page** | https://github.com/AntaresSimulatorTeam/Antares_Simulator/releases/tag/v${LATEST} |
+
+          This issue tracks validation and integration into GEMS.
+
+          ---
+
+          ## Tasks
+
+          ### Validation
+          - [ ] Run E2E tests on library models
+          - [ ] Run E2E tests on taxonomy
+          - [ ] Run edge case scenarios
+          - [ ] Compare results with previous version
+
+          ### Compatibility
+          - [ ] Check GEMS Language syntax impact
+          - [ ] Verify Modeler compatibility
+          - [ ] Identify breaking changes
+
+          ### Documentation
+          - [ ] Update GEMS Language documentation if needed
+          - [ ] Document behavioral changes
+          - [ ] Add migration notes
+
+          ### Decision
+          - [ ] Approve version - update \`versions/antares-simulator.txt\` to \`${LATEST}\`
+          - [ ] Reject version - close this issue with explanation
+
+          ---
+
+          ## Notes
+
+          _Add findings and observations here._
+          EOF
+
           gh issue create \
             --repo "${{ github.repository }}" \
-            --title "Antares Simulator v${LATEST} detected – validation required" \
-            --body "## New Version Detected
-
-A new version of Antares Simulator has been detected.
-
-| | |
-|---|---|
-| **Previous version** | \`${CURRENT}\` |
-| **New version** | \`${LATEST}\` |
-| **Release page** | https://github.com/AntaresSimulatorTeam/Antares_Simulator/releases/tag/v${LATEST} |
-
-This issue tracks validation and integration into GEMS.
-
----
-
-## Tasks
-
-### Validation
-- [ ] Run E2E tests on library models
-- [ ] Run E2E tests on taxonomy
-- [ ] Run edge case scenarios
-- [ ] Compare results with previous version
-
-### Compatibility
-- [ ] Check GEMS Language syntax impact
-- [ ] Verify Modeler compatibility
-- [ ] Identify breaking changes
-
-### Documentation
-- [ ] Update GEMS Language documentation if needed
-- [ ] Document behavioral changes
-- [ ] Add migration notes
-
-### Decision
-- [ ] Approve version → update \`versions/antares-simulator.txt\` to \`${LATEST}\`
-- [ ] Reject version → close this issue with explanation
-
----
-
-## Notes
-
-_Add findings and observations here._"
+            --title "Antares Simulator v${LATEST} detected - validation required" \
+            --body-file /tmp/issue-body.md
