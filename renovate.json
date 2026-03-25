@@ -8,14 +8,14 @@
       "matchStrings": [
         "ANTARES_SIMULATOR_VERSION=(?<currentValue>.+)"
       ],
-      "depNameTemplate": "AntaresSimulatorTeam/antares-simulator",
+      "depNameTemplate": "AntaresSimulatorTeam/Antares_Simulator",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver-coerced"
     }
   ],
   "packageRules": [
     {
-      "matchPackageNames": ["AntaresSimulatorTeam/antares-simulator"],
+      "matchPackageNames": ["AntaresSimulatorTeam/Antares_Simulator"],
       "ignoreUnstable": true,
       "automerge": false
     }
