@@ -8,7 +8,7 @@
         "ANTARES_SIMULATOR_VERSION=(?<currentValue>.+)"
       ],
       "depNameTemplate": "AntaresSimulatorTeam/antares-simulator",
-      "datasourceTemplate": "github-tags",
+      "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver-coerced"
     }
   ],
