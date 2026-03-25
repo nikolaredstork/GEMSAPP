@@ -1,0 +1,22 @@
+{
+  "extends": ["config:base"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^versions/antares-simulator\\.txt$"],
+      "matchStrings": [
+        "ANTARES_SIMULATOR_VERSION=(?<currentValue>.+)"
+      ],
+      "depNameTemplate": "AntaresSimulatorTeam/antares-simulator",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver-coerced"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": ["AntaresSimulatorTeam/antares-simulator"],
+      "ignoreUnstable": true,
+      "automerge": false
+    }
+  ]
+}

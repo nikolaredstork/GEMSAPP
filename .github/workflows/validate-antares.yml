@@ -1,0 +1,26 @@
+name: Validate Antares Update
+
+on:
+  pull_request:
+    paths:
+      - "versions/antares-simulator.txt"
+
+jobs:
+  validate:
+    if: github.actor == 'renovate[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Read version
+        run: |
+          echo "Current version:"
+          cat versions/antares-simulator.txt
+
+      - name: Fake validation
+        run: |
+          echo "Simulating Antares validation..."
+          sleep 5
+          echo "Validation SUCCESS"
