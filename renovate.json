@@ -1,10 +1,9 @@
 {
-  "extends": ["config:base"],
-  "githubTokenSecret": "RENOVATE_TOKEN",
+  "extends": ["config:recommended"],
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": ["^versions/antares-simulator\\.txt$"],
+      "managerFilePatterns": ["/^versions/antares-simulator\\.txt$/"],
       "matchStrings": [
         "ANTARES_SIMULATOR_VERSION=(?<currentValue>.+)"
       ],
