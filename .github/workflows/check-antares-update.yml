@@ -1,0 +1,135 @@
+name: Check Antares Simulator Update
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check-update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read current version
+        id: current
+        run: |
+          VERSION=$(grep 'ANTARES_SIMULATOR_VERSION' versions/antares-simulator.txt | cut -d'=' -f2 | tr -d '[:space:]')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Current version: $VERSION"
+
+      - name: Fetch latest stable Antares release
+        id: latest
+        run: |
+          TAGS=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/AntaresSimulatorTeam/Antares_Simulator/tags?per_page=50")
+
+          LATEST=$(echo "$TAGS" \
+            | jq -r '.[].name' \
+            | grep -v -i -E 'rc|alpha|beta|continuous|nightly' \
+            | sed 's/^v//' \
+            | sort -V \
+            | tail -1)
+
+          if [ -z "$LATEST" ]; then
+            echo "ERROR: Could not fetch latest version"
+            exit 1
+          fi
+
+          echo "version=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Latest stable version: $LATEST"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+          LATEST="${{ steps.latest.outputs.version }}"
+          echo "Current: $CURRENT  |  Latest: $LATEST"
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "up_to_date=true" >> "$GITHUB_OUTPUT"
+            echo "No update needed."
+          else
+            echo "up_to_date=false" >> "$GITHUB_OUTPUT"
+            echo "New version detected: $LATEST"
+          fi
+
+      - name: Check for duplicate issue
+        id: duplicate
+        if: steps.compare.outputs.up_to_date == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST="${{ steps.latest.outputs.version }}"
+          EXISTING=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --search "Antares Simulator v${LATEST} detected" \
+            --json number \
+            --jq 'length')
+          echo "existing=$EXISTING" >> "$GITHUB_OUTPUT"
+          if [ "$EXISTING" -gt "0" ]; then
+            echo "Issue already exists for v${LATEST}, skipping."
+          else
+            echo "No existing issue found, will create."
+          fi
+
+      - name: Create GitHub Issue
+        if: steps.compare.outputs.up_to_date == 'false' && steps.duplicate.outputs.existing == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST="${{ steps.latest.outputs.version }}"
+          CURRENT="${{ steps.current.outputs.version }}"
+
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "Antares Simulator v${LATEST} detected – validation required" \
+            --body "## New Version Detected
+
+A new version of Antares Simulator has been detected.
+
+| | |
+|---|---|
+| **Previous version** | \`${CURRENT}\` |
+| **New version** | \`${LATEST}\` |
+| **Release page** | https://github.com/AntaresSimulatorTeam/Antares_Simulator/releases/tag/v${LATEST} |
+
+This issue tracks validation and integration into GEMS.
+
+---
+
+## Tasks
+
+### Validation
+- [ ] Run E2E tests on library models
+- [ ] Run E2E tests on taxonomy
+- [ ] Run edge case scenarios
+- [ ] Compare results with previous version
+
+### Compatibility
+- [ ] Check GEMS Language syntax impact
+- [ ] Verify Modeler compatibility
+- [ ] Identify breaking changes
+
+### Documentation
+- [ ] Update GEMS Language documentation if needed
+- [ ] Document behavioral changes
+- [ ] Add migration notes
+
+### Decision
+- [ ] Approve version → update \`versions/antares-simulator.txt\` to \`${LATEST}\`
+- [ ] Reject version → close this issue with explanation
+
+---
+
+## Notes
+
+_Add findings and observations here._"
