@@ -1086,27 +1086,6 @@ async function loadStudy(studyId) {
 function reloadStudy() { loadStudy(currentStudy); }
 
 // ══════════════════════════════════════════════
-//  PALETTE
-// ══════════════════════════════════════════════
-function buildPalette() {
-  if (!modelsData || !modelsData.library) return;
-  const models = modelsData.library.models || [];
-  const el = document.getElementById('model-list');
-
-  el.innerHTML = models.map(m => {
-    const s = styleOf(m.id);
-    return `
-      <div class="model-item" onclick="openAddModal('${m.id}')" title="Click to add a ${m.id} component">
-        <div class="model-icon ${s.cls}" ${iconStyle(s)}>${s.icon}</div>
-        <div>
-          <div class="model-label">${s.label || m.id}</div>
-          <div class="model-desc">${m.id}</div>
-        </div>
-      </div>`;
-  }).join('<div class="palette-sep"></div>');
-}
-
-// ══════════════════════════════════════════════
 //  NETWORK
 // ══════════════════════════════════════════════
 function buildNetwork() {
@@ -1150,7 +1129,8 @@ function buildNetwork() {
 
   network.on('click', params => {
     if (params.nodes.length === 1) selectNode(params.nodes[0]);
-    else if (params.nodes.length === 0) showPlaceholder();
+    else if (params.edges.length === 1) selectEdge(params.edges[0]);
+    else showPlaceholder();
   });
 
   network.on('dragEnd', params => {
@@ -1342,10 +1322,6 @@ function findComponent(id) {
   return (systemData.system.components || []).find(c => c.id === id);
 }
 
-function findModelDef(type) {
-  return (modelsData.library.models || []).find(m => m.id === type);
-}
-
 function getConnectionsFor(id) {
   return (systemData.system.connections || []).filter(c => c.component1 === id || c.component2 === id);
 }
@@ -1399,6 +1375,37 @@ function removeConnection(c1, c2, p1, p2) {
   }
 }
 
+function selectEdge(eid) {
+  selectedNodeId = null;
+  const edge = edgesDS.get(eid);
+  if (!edge) return;
+
+  document.getElementById('props-title').textContent = 'Connection';
+  const icon = document.getElementById('props-icon');
+  icon.textContent = '⟷';
+  icon.className   = 'model-icon';
+  icon.style.cssText = 'width:22px;height:22px;font-size:12px;';
+
+  document.getElementById('props-body').innerHTML = `
+    <div class="prop-section">
+      <div class="prop-section-title">Connection</div>
+      <div class="prop-row">
+        <div class="prop-label">From</div>
+        <div class="prop-input" style="background:transparent;border:none;color:var(--fg);">${edge.from}<span style="color:var(--muted)">.</span>${edge._port1}</div>
+      </div>
+      <div class="prop-row">
+        <div class="prop-label">To</div>
+        <div class="prop-input" style="background:transparent;border:none;color:var(--fg);">${edge.to}<span style="color:var(--muted)">.</span>${edge._port2}</div>
+      </div>
+    </div>`;
+
+  const footer = document.getElementById('props-footer');
+  footer.style.display = 'flex';
+  footer.innerHTML = `
+    <div style="flex:1"></div>
+    <button class="btn danger" onclick="deleteEdge('${eid}')">&#128465; Delete</button>`;
+}
+
 function deleteNode(id) {
   if (!confirm(`Delete component "${id}"?`)) return;
   systemData.system.components = (systemData.system.components || []).filter(c => c.id !== id);
@@ -1417,6 +1424,8 @@ function deleteEdge(eid) {
   const idx = conns.findIndex(c => c.component1 === edge.from && c.component2 === edge.to && c.port1 === edge._port1 && c.port2 === edge._port2);
   if (idx !== -1) conns.splice(idx, 1);
   edgesDS.remove(eid);
+  log(`Connection deleted: ${edge.from}.${edge._port1} ↔ ${edge.to}.${edge._port2}`, 'warn');
+  showPlaceholder();
 }
 
 function rebuildEdges() {
