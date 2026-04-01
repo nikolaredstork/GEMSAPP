@@ -7,7 +7,6 @@ on:
 
 permissions:
   issues: write
-  contents: read
 
 jobs:
   check-update:
@@ -28,7 +27,6 @@ jobs:
         id: latest
         run: |
           TAGS=$(curl -sf \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/AntaresSimulatorTeam/Antares_Simulator/tags?per_page=50")
 
