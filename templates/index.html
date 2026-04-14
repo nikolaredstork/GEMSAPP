@@ -1391,11 +1391,11 @@ function selectEdge(eid) {
       <div class="prop-section-title">Connection</div>
       <div class="prop-row">
         <div class="prop-label">From</div>
-        <div class="prop-input" style="background:transparent;border:none;color:var(--fg);">${edge.from}<span style="color:var(--muted)">.</span>${edge._port1}</div>
+        <div class="prop-input" style="background:transparent;border:none;color:var(--text);">${edge.from}<span style="color:var(--muted)">.</span>${edge._port1}</div>
       </div>
       <div class="prop-row">
         <div class="prop-label">To</div>
-        <div class="prop-input" style="background:transparent;border:none;color:var(--fg);">${edge.to}<span style="color:var(--muted)">.</span>${edge._port2}</div>
+        <div class="prop-input" style="background:transparent;border:none;color:var(--text);">${edge.to}<span style="color:var(--muted)">.</span>${edge._port2}</div>
       </div>
     </div>`;
 
@@ -1403,7 +1403,7 @@ function selectEdge(eid) {
   footer.style.display = 'flex';
   footer.innerHTML = `
     <div style="flex:1"></div>
-    <button class="btn danger" onclick="deleteEdge('${eid}')">&#128465; Delete</button>`;
+    <button class="btn danger" onclick="deleteEdge('${eid}')">🗑 Delete</button>`;
 }
 
 function deleteNode(id) {
@@ -1584,12 +1584,26 @@ async function saveStudy() {
     });
   }
 
+  // Normalize parameters: drop any parameter whose id is not declared in the model definition
+  const normalizedComponents = (systemData.system.components || []).map(comp => {
+    const type = (comp.model || '').split('.').pop();
+    const modelDef = findModelDef(type);
+    if (!modelDef || !modelDef.parameters) return comp;
+    const validIds = new Set(modelDef.parameters.map(p => p.id));
+    const filtered = (comp.parameters || []).filter(p => validIds.has(p.id));
+    return { ...comp, parameters: filtered };
+  });
+  const normalizedSystem = { system: { ...systemData.system, components: normalizedComponents } };
+
   const payload = {
     study:  currentStudy,
-    system: systemData,
+    system: normalizedSystem,
     layout: layoutData,
     params: paramsData,
   };
+
+  // Sync in-memory state with the normalized version before sending
+  systemData = normalizedSystem;
 
   log('Saving…', 'info');
   const res = await fetch('/api/system', {

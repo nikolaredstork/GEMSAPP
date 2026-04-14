@@ -1,0 +1,44 @@
+name: Antares Simulator Update Detected
+description: Automatically created when a new Antares Simulator release is detected
+title: "[ANTARES UPDATE] New release: v"
+labels: ["antares-update"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue was automatically created by the `check-antares-update` workflow.
+        Review the new Antares release and validate it against the GEMSAPP studies.
+
+  - type: input
+    id: antares_version
+    attributes:
+      label: New Antares Version
+      placeholder: "e.g. 9.4.0"
+    validations:
+      required: true
+
+  - type: input
+    id: previous_version
+    attributes:
+      label: Previous Tracked Version
+      placeholder: "e.g. 9.3.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: release_notes
+    attributes:
+      label: Release Notes Summary
+      description: Key changes in the new Antares release relevant to GEMSAPP studies
+
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Validation Checklist
+      value: |
+        - [ ] Review Antares release notes
+        - [ ] Run studies against new binary (lines_study, links_study, transformers_study)
+        - [ ] Compare simulation_table outputs with previous version
+        - [ ] Check pypsa_models.yml compatibility
+        - [ ] Update `versions/antares-simulator.txt` to new version
+        - [ ] Close this issue once validated or rejected with explanation

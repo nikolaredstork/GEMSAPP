@@ -1,0 +1,51 @@
+name: Study or Application Change
+description: Propose or track a change to a GEMS study, model library, or the application
+title: "[CHANGE] "
+labels: ["change"]
+body:
+  - type: dropdown
+    id: change_type
+    attributes:
+      label: Change Type
+      options:
+        - New study
+        - Modify existing study (system.yml / data-series)
+        - Update model library (pypsa_models.yml)
+        - Application change (app.py / templates)
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected_study
+    attributes:
+      label: Affected Study
+      multiple: true
+      options:
+        - lines_study
+        - links_study
+        - transformers_study
+        - All studies
+        - Not study-specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What change is being proposed and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Checklist
+      value: |
+        - [ ] Study YAML updated (system.yml)
+        - [ ] Data series updated if needed (input/data-series/)
+        - [ ] Model library updated if needed (pypsa_models.yml)
+        - [ ] Simulation output verified against expected results
+        - [ ] README updated if applicable

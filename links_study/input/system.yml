@@ -1,0 +1,272 @@
+system:
+  components:
+  - id: A
+    model: pypsa_models.bus
+    parameters:
+    - id: v_nom
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: x
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: y
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: v_mag_pu_set
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: v_mag_pu_min
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: v_mag_pu_max
+      scenario-dependent: false
+      time-dependent: false
+      value: 2
+  - id: B
+    model: pypsa_models.bus
+    parameters:
+    - id: v_nom
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: x
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: y
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: v_mag_pu_set
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: v_mag_pu_min
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: v_mag_pu_max
+      scenario-dependent: false
+      time-dependent: false
+      value: 2
+  - id: C
+    model: pypsa_models.bus
+    parameters:
+    - id: v_nom
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: x
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: y
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: v_mag_pu_set
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: v_mag_pu_min
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: v_mag_pu_max
+      scenario-dependent: false
+      time-dependent: false
+      value: 2
+  - id: G_A
+    model: pypsa_models.generator
+    parameters:
+    - id: p_nom_min
+      scenario-dependent: false
+      time-dependent: false
+      value: 200
+    - id: p_nom_max
+      scenario-dependent: false
+      time-dependent: false
+      value: 200
+    - id: p_min_pu
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: p_max_pu
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: marginal_cost
+      scenario-dependent: false
+      time-dependent: false
+      value: 10
+    - id: capital_cost
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: efficiency
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: sign
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: e_sum_min
+      scenario-dependent: false
+      time-dependent: false
+      value: -1.0e10
+    - id: e_sum_max
+      scenario-dependent: false
+      time-dependent: false
+      value: 1.0e10
+    - id: emission_factor
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+  - id: L_C
+    model: pypsa_models.load
+    parameters:
+    - id: p_set
+      scenario-dependent: true
+      time-dependent: true
+      value: load
+    - id: q_set
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: sign
+      scenario-dependent: false
+      time-dependent: false
+      value: -1
+  - id: AB
+    model: pypsa_models.link
+    parameters:
+    - id: p_nom_min
+      scenario-dependent: false
+      time-dependent: false
+      value: 100
+    - id: p_nom_max
+      scenario-dependent: false
+      time-dependent: false
+      value: 100
+    - id: p_min_pu
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: p_max_pu
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: efficiency
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: marginal_cost
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: capital_cost
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+  - id: BC
+    model: pypsa_models.link
+    parameters:
+    - id: p_nom_min
+      scenario-dependent: false
+      time-dependent: false
+      value: 100
+    - id: p_nom_max
+      scenario-dependent: false
+      time-dependent: false
+      value: 100
+    - id: p_min_pu
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: p_max_pu
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: efficiency
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: marginal_cost
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: capital_cost
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+  - id: AC
+    model: pypsa_models.link
+    parameters:
+    - id: p_nom_min
+      scenario-dependent: false
+      time-dependent: false
+      value: 100
+    - id: p_nom_max
+      scenario-dependent: false
+      time-dependent: false
+      value: 100
+    - id: p_min_pu
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: p_max_pu
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: efficiency
+      scenario-dependent: false
+      time-dependent: false
+      value: 1
+    - id: marginal_cost
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+    - id: capital_cost
+      scenario-dependent: false
+      time-dependent: false
+      value: 0
+  connections:
+  - component1: A
+    component2: G_A
+    port1: p_balance_port
+    port2: p_balance_port
+  - component1: C
+    component2: L_C
+    port1: p_balance_port
+    port2: p_balance_port
+  - component1: A
+    component2: AB
+    port1: p_balance_port
+    port2: p0_port
+  - component1: B
+    component2: AB
+    port1: p_balance_port
+    port2: p1_port
+  - component1: B
+    component2: BC
+    port1: p_balance_port
+    port2: p0_port
+  - component1: C
+    component2: BC
+    port1: p_balance_port
+    port2: p1_port
+  - component1: A
+    component2: AC
+    port1: p_balance_port
+    port2: p0_port
+  - component1: C
+    component2: AC
+    port1: p_balance_port
+    port2: p1_port
+  id: links_study
