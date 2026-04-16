@@ -7,7 +7,10 @@ body:
     attributes:
       value: |
         This issue was automatically created by the `check-antares-update` workflow.
-        Review the new Antares release and validate it against the GEMSAPP studies.
+
+        **Next step:** review the release notes and open the relevant process issue(s):
+        - Impact on GEMS Language docs → open a **DOC-01** issue
+        - Impact on model libraries or taxonomies → open a **LT-01** issue
 
   - type: input
     id: antares_version
@@ -29,16 +32,14 @@ body:
     id: release_notes
     attributes:
       label: Release Notes Summary
-      description: Key changes in the new Antares release relevant to GEMSAPP studies
+      description: Key changes in the new Antares release relevant to GEMS (auto-populated by workflow if available)
 
   - type: textarea
-    id: checklist
+    id: triage
     attributes:
-      label: Validation Checklist
+      label: Triage
       value: |
-        - [ ] Review Antares release notes
-        - [ ] Run studies against new binary (lines_study, links_study, transformers_study)
-        - [ ] Compare simulation_table outputs with previous version
-        - [ ] Check pypsa_models.yml compatibility
-        - [ ] Update `versions/antares-simulator.txt` to new version
-        - [ ] Close this issue once validated or rejected with explanation
+        - [ ] Release notes reviewed
+        - [ ] DOC-01 issue opened (if GEMS Language docs are affected)
+        - [ ] LT-01 issue opened (if libraries or taxonomies are affected)
+        - [ ] No action needed (if release has no GEMS impact)
