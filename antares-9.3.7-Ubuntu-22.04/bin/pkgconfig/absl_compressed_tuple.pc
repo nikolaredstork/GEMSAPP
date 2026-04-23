@@ -1,0 +1,12 @@
+prefix=/home/runner/work/or-tools-rte/or-tools-rte/build/install
+exec_prefix=${prefix}
+libdir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/lib
+includedir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/include
+
+Name: absl_compressed_tuple
+Description: Abseil compressed_tuple library
+URL: https://abseil.io/
+Version: 20250512
+Requires: absl_utility = 20250512
+Libs: -L${libdir}  
+Cflags: -I${includedir} -DNOMINMAX

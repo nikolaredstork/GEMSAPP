@@ -1,0 +1,12 @@
+prefix=/home/runner/work/or-tools-rte/or-tools-rte/build/install
+exec_prefix=${prefix}
+libdir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/lib
+includedir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/include
+
+Name: absl_log
+Description: Abseil log library
+URL: https://abseil.io/
+Version: 20250512
+Requires: absl_log_internal_log_impl = 20250512, absl_vlog_is_on = 20250512
+Libs: -L${libdir}  
+Cflags: -I${includedir} -DNOMINMAX

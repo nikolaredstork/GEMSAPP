@@ -13,10 +13,39 @@ app.config['SECRET_KEY'] = 'gems-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODELER_EXE = os.path.join(BASE_DIR, "antares-9.3.2-Ubuntu-22.04", "bin", "antares-modeler")
 
 simulation_process = None
 simulation_running = False
+
+
+def get_available_simulators():
+    """Scan BASE_DIR for antares simulator installations (directories containing bin/antares-modeler)."""
+    import re
+    simulators = []
+    try:
+        entries = sorted(os.listdir(BASE_DIR))
+    except OSError:
+        return simulators
+    for name in entries:
+        if not name.startswith('antares-'):
+            continue
+        modeler = os.path.join(BASE_DIR, name, 'bin', 'antares-modeler')
+        if not os.path.isfile(modeler):
+            continue
+        # Extract a human-readable version label from the directory name
+        # e.g. "antares-9.3.7-Ubuntu-22.04" -> version "9.3.7", platform "Ubuntu 22.04"
+        label = name[len('antares-'):]
+        m = re.match(r'^([\d.]+)-(.+)$', label)
+        version = m.group(1) if m else label
+        platform = m.group(2).replace('-', ' ') if m else ''
+        simulators.append({
+            'id':       name,
+            'version':  version,
+            'platform': platform,
+            'label':    f'{version} ({platform})' if platform else version,
+            'modeler':  modeler,
+        })
+    return simulators
 
 
 def get_study_paths(study_id):
@@ -290,6 +319,11 @@ def save_system():
     return jsonify({'status': 'ok'})
 
 
+@app.route('/api/simulators')
+def list_simulators():
+    return jsonify(get_available_simulators())
+
+
 @app.route('/api/simulate', methods=['POST'])
 def run_simulation():
     global simulation_process, simulation_running
@@ -301,15 +335,25 @@ def run_simulation():
     if err: return err
     paths = get_study_paths(study_id)
 
-    if not os.path.exists(MODELER_EXE):
-        return jsonify({'error': f'Modeler not found: {MODELER_EXE}'}), 404
+    # Resolve which modeler to use
+    simulator_id = (request.json or {}).get('simulator', '').strip()
+    if simulator_id:
+        modeler_exe = os.path.join(BASE_DIR, simulator_id, 'bin', 'antares-modeler')
+    else:
+        sims = get_available_simulators()
+        if not sims:
+            return jsonify({'error': 'No Antares Simulator installation found in the GEMSAPP directory'}), 404
+        modeler_exe = sims[-1]['modeler']  # default: latest (last alphabetically)
+
+    if not os.path.isfile(modeler_exe):
+        return jsonify({'error': f'Modeler not found: {modeler_exe}'}), 404
 
     def run():
         global simulation_process, simulation_running
         simulation_running = True
         socketio.emit('sim_start', {'study': study_id})
         try:
-            cmd = [MODELER_EXE, paths['dir']]
+            cmd = [modeler_exe, paths['dir']]
             simulation_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -525,7 +569,13 @@ def download_result():
 
 
 if __name__ == '__main__':
-    print(f"GEMS Power System Editor")
-    print(f"Modeler: {MODELER_EXE}")
-    print(f"Open http://localhost:5000")
+    print("GEMS Power System Editor")
+    sims = get_available_simulators()
+    if sims:
+        print(f"Found {len(sims)} Antares Simulator(s):")
+        for s in sims:
+            print(f"  {s['label']:40s}  {s['modeler']}")
+    else:
+        print("WARNING: No Antares Simulator found in GEMSAPP directory")
+    print("Open http://localhost:5000")
     socketio.run(app, debug=False, host='0.0.0.0', port=5000, use_reloader=False, allow_unsafe_werkzeug=True)

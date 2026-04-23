@@ -1,0 +1,81 @@
+// Copyright 2007-2026, RTE (https://www.rte-france.com)
+// SPDX-License-Identifier: MPL-2.0
+
+#pragma once
+
+#include <memory>
+#include <string>
+
+#include "mipConstraint.h"
+#include "mipSolution.h"
+#include "mipVariable.h"
+
+/// Namespace for the classes related to the linear problem API
+namespace Antares::Optimisation::LinearProblemApi
+{
+
+/**
+ * Linear Problem
+ * This class is aimed at creating and manipulating variables/constraints
+ * Also used to control the objective, maximization or minimization, and to solve the problem
+ */
+class ILinearProblem
+{
+public:
+    virtual ~ILinearProblem() = default;
+
+    /// Create a continuous variable
+    virtual IMipVariable* addNumVariable(double lb, double ub, const std::string& name) = 0;
+
+    /// Create a integer variable
+    virtual IMipVariable* addIntVariable(double lb, double ub, const std::string& name) = 0;
+
+    /// Create a continuous or integer variable
+    virtual IMipVariable* addVariable(double lb, double ub, bool integer, const std::string& name)
+      = 0;
+
+    // Variables observers
+    [[nodiscard]] virtual const std::vector<std::unique_ptr<IMipVariable>>& getVariables() const
+      = 0;
+    [[nodiscard]] virtual IMipVariable* getVariable(std::size_t index) const = 0;
+    [[nodiscard]] virtual IMipVariable* lookupVariable(const std::string& name) const = 0;
+    [[nodiscard]] virtual int variableCount() const = 0;
+
+    /// Add a bounded constraint to the problem
+    virtual IMipConstraint* addConstraint(double lb, double ub, const std::string& name) = 0;
+
+    // Constraints observers
+    [[nodiscard]] virtual const std::vector<std::unique_ptr<IMipConstraint>>& getConstraints() const
+      = 0;
+    [[nodiscard]] virtual IMipConstraint* getConstraint(std::size_t index) const = 0;
+    [[nodiscard]] virtual LinearProblemApi::IMipConstraint* lookupConstraint(
+      const std::string& name) const
+      = 0;
+    [[nodiscard]] virtual int constraintCount() const = 0;
+
+    /// Set the objective coefficient for a given variable
+    virtual void setObjectiveCoefficient(IMipVariable* var, double coefficient) = 0;
+    virtual double getObjectiveCoefficient(const IMipVariable* var) const = 0;
+
+    virtual void setObjectiveOffset(double objectiveOffset) = 0;
+    [[nodiscard]] virtual double getObjectiveOffset() const = 0;
+
+    /// Sets the optimization direction to minimize
+    virtual void setMinimization() = 0;
+    /// Sets the optimization direction to maximize
+    virtual void setMaximization() = 0;
+
+    [[nodiscard]] virtual bool isMinimization() const = 0;
+    [[nodiscard]] virtual bool isMaximization() const = 0;
+
+    /// Solve the problem, returns a IMipSolution
+    virtual IMipSolution* solve(bool verboseSolver) = 0;
+
+    // Definition of infinity
+    [[nodiscard]] virtual double infinity() const = 0;
+    virtual bool isLP() const = 0;
+
+    virtual double objectiveValue() const = 0;
+};
+
+} // namespace Antares::Optimisation::LinearProblemApi

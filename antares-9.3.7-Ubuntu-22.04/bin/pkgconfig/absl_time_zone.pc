@@ -1,0 +1,12 @@
+prefix=/home/runner/work/or-tools-rte/or-tools-rte/build/install
+exec_prefix=${prefix}
+libdir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/lib
+includedir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/include
+
+Name: absl_time_zone
+Description: Abseil time_zone library
+URL: https://abseil.io/
+Version: 20250512
+Requires:
+Libs: -L${libdir}  -labsl_time_zone 
+Cflags: -I${includedir} -DNOMINMAX

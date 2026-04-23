@@ -1,0 +1,56 @@
+// Copyright 2007-2026, RTE (https://www.rte-france.com)
+// SPDX-License-Identifier: MPL-2.0
+
+//
+// Created by marechaljas on 03/07/23.
+//
+
+#pragma once
+
+#include "TSnumberData.h"
+
+namespace Antares::Data::ScenarioBuilder
+{
+class BindingConstraintsTSNumberData final: public TSNumberData
+{
+public:
+    BindingConstraintsTSNumberData() = default;
+    virtual ~BindingConstraintsTSNumberData() = default;
+
+    bool reset(const Study& study) override;
+
+#ifdef BUILD_UI
+    void saveToINIFile(const Study& study, Yuni::IO::File::Stream& file) const override;
+#endif
+
+    void setTSnumber(const std::string& group_name, unsigned year, unsigned value);
+    unsigned get(const std::string& group_name, unsigned year) const;
+    bool apply(Study& study) override;
+    CString<512, false> get_prefix() const override;
+    unsigned get_tsGenCount(const Study& study) const override;
+
+private:
+    std::map<std::string, MatrixType> rules_;
+};
+
+inline unsigned BindingConstraintsTSNumberData::get(const std::string& group_name,
+                                                    const unsigned year) const
+{
+    auto it = rules_.find(group_name);
+    if (it == rules_.end())
+    {
+        return 0;
+    }
+    return it->second[0][year];
+}
+
+inline CString<512, false> BindingConstraintsTSNumberData::get_prefix() const
+{
+    return "bc,";
+}
+
+inline unsigned BindingConstraintsTSNumberData::get_tsGenCount(const Study&) const
+{
+    return 0;
+}
+} // namespace Antares::Data::ScenarioBuilder

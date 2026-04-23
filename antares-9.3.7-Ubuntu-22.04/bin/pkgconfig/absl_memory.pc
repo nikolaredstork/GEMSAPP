@@ -1,0 +1,12 @@
+prefix=/home/runner/work/or-tools-rte/or-tools-rte/build/install
+exec_prefix=${prefix}
+libdir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/lib
+includedir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/include
+
+Name: absl_memory
+Description: Abseil memory library
+URL: https://abseil.io/
+Version: 20250512
+Requires: absl_core_headers = 20250512, absl_meta = 20250512
+Libs: -L${libdir}  
+Cflags: -I${includedir} -DNOMINMAX

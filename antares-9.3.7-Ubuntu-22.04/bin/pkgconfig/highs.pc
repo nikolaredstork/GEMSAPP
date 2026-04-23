@@ -1,0 +1,12 @@
+prefix=/home/runner/work/or-tools-rte/or-tools-rte/build/install
+libdir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/lib
+includedir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/include/highs
+
+Name: HiGHS
+Description: Linear Optimization Software
+URL: https://github.com/ERGO-Code/HiGHS
+Version: 1.10.0
+Libs: -L${libdir} -lhighs
+#TODO Libs.private (when HiGHS lib is build as static lib)
+Cflags: -I${includedir}
+Requires:

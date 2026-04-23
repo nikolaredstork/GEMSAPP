@@ -1,0 +1,12 @@
+prefix=/home/runner/work/or-tools-rte/or-tools-rte/build/install
+exec_prefix=${prefix}
+libdir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/lib
+includedir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/include
+
+Name: absl_errno_saver
+Description: Abseil errno_saver library
+URL: https://abseil.io/
+Version: 20250512
+Requires: absl_config = 20250512
+Libs: -L${libdir}  
+Cflags: -I${includedir} -DNOMINMAX

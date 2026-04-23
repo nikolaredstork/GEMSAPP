@@ -1,0 +1,12 @@
+prefix=/home/runner/work/or-tools-rte/or-tools-rte/build/install
+exec_prefix=${prefix}
+libdir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/lib
+includedir=/home/runner/work/or-tools-rte/or-tools-rte/build/install/include
+
+Name: absl_log_internal_flags
+Description: Abseil log_internal_flags library
+URL: https://abseil.io/
+Version: 20250512
+Requires: absl_flags = 20250512
+Libs: -L${libdir}  
+Cflags: -I${includedir} -DNOMINMAX
