@@ -12,24 +12,26 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'gems-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+STUDIES_DIR = os.path.join(BASE_DIR, 'Studies')
+SOLVERS_DIR = os.path.join(BASE_DIR, 'Solver')
 
 simulation_process = None
 simulation_running = False
 
 
 def get_available_simulators():
-    """Scan BASE_DIR for antares simulator installations (directories containing bin/antares-modeler)."""
+    """Scan SOLVERS_DIR for antares simulator installations (directories containing bin/antares-modeler)."""
     import re
     simulators = []
     try:
-        entries = sorted(os.listdir(BASE_DIR))
+        entries = sorted(os.listdir(SOLVERS_DIR))
     except OSError:
         return simulators
     for name in entries:
         if not name.startswith('antares-'):
             continue
-        modeler = os.path.join(BASE_DIR, name, 'bin', 'antares-modeler')
+        modeler = os.path.join(SOLVERS_DIR, name, 'bin', 'antares-modeler')
         if not os.path.isfile(modeler):
             continue
         # Extract a human-readable version label from the directory name
@@ -49,7 +51,7 @@ def get_available_simulators():
 
 
 def get_study_paths(study_id):
-    study_dir = os.path.join(BASE_DIR, study_id)
+    study_dir = os.path.join(STUDIES_DIR, study_id)
     return {
         'dir':        study_dir,
         'lib_dir':    os.path.join(study_dir, "input", "model-libraries"),
@@ -151,8 +153,9 @@ def index():
 @app.route('/api/studies')
 def list_studies():
     studies = []
-    for name in sorted(os.listdir(BASE_DIR)):
-        path = os.path.join(BASE_DIR, name)
+    os.makedirs(STUDIES_DIR, exist_ok=True)
+    for name in sorted(os.listdir(STUDIES_DIR)):
+        path = os.path.join(STUDIES_DIR, name)
         if os.path.isdir(path) and os.path.exists(os.path.join(path, 'parameters.yml')):
             studies.append({'id': name, 'name': name})
     return jsonify(studies)
@@ -161,12 +164,12 @@ def list_studies():
 @app.route('/api/studies/<study_id>', methods=['DELETE'])
 def delete_study(study_id):
     import shutil
-    study_dir = os.path.join(BASE_DIR, study_id)
-    # Safety: must be a direct child of BASE_DIR and have parameters.yml
+    study_dir = os.path.join(STUDIES_DIR, study_id)
+    # Safety: must be a direct child of STUDIES_DIR and have parameters.yml
     if not os.path.isdir(study_dir) or not os.path.exists(os.path.join(study_dir, 'parameters.yml')):
         return jsonify({'error': 'Study not found'}), 404
     # Prevent path traversal
-    if os.path.realpath(study_dir) != os.path.realpath(os.path.join(BASE_DIR, study_id)):
+    if os.path.realpath(study_dir) != os.path.realpath(os.path.join(STUDIES_DIR, study_id)):
         return jsonify({'error': 'Invalid study path'}), 400
     shutil.rmtree(study_dir)
     return jsonify({'status': 'ok'})
@@ -182,7 +185,8 @@ def create_study():
     import re
     if not re.match(r'^[\w\-. ]+$', name):
         return jsonify({'error': 'Name may only contain letters, digits, spaces, hyphens, underscores and dots'}), 400
-    study_dir = os.path.join(BASE_DIR, name)
+    os.makedirs(STUDIES_DIR, exist_ok=True)
+    study_dir = os.path.join(STUDIES_DIR, name)
     if os.path.exists(study_dir):
         return jsonify({'error': f'Study "{name}" already exists'}), 409
 
@@ -338,7 +342,7 @@ def run_simulation():
     # Resolve which modeler to use
     simulator_id = (request.json or {}).get('simulator', '').strip()
     if simulator_id:
-        modeler_exe = os.path.join(BASE_DIR, simulator_id, 'bin', 'antares-modeler')
+        modeler_exe = os.path.join(SOLVERS_DIR, simulator_id, 'bin', 'antares-modeler')
     else:
         sims = get_available_simulators()
         if not sims:
@@ -405,7 +409,7 @@ def sim_status():
 def list_results():
     study_id, err = require_study()
     if err: return err
-    output_dir = os.path.join(BASE_DIR, study_id, 'output')
+    output_dir = os.path.join(STUDIES_DIR, study_id, 'output')
     if not os.path.isdir(output_dir):
         return jsonify([])
     files = sorted(
@@ -422,7 +426,7 @@ def results_meta():
     filename = request.args.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
-    path = os.path.join(BASE_DIR, study_id, 'output', filename)
+    path = os.path.join(STUDIES_DIR, study_id, 'output', filename)
     if not os.path.isfile(path):
         return jsonify({'error': 'file not found'}), 404
 
@@ -457,7 +461,7 @@ def results_series():
 
     if not all([filename, component, output]):
         return jsonify({'error': 'file, component and output required'}), 400
-    path = os.path.join(BASE_DIR, study_id, 'output', filename)
+    path = os.path.join(STUDIES_DIR, study_id, 'output', filename)
     if not os.path.isfile(path):
         return jsonify({'error': 'file not found'}), 404
 
@@ -564,7 +568,7 @@ def download_result():
     filename = request.args.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
-    output_dir = os.path.join(BASE_DIR, study_id, 'output')
+    output_dir = os.path.join(STUDIES_DIR, study_id, 'output')
     return send_from_directory(output_dir, filename, as_attachment=True)
 
 

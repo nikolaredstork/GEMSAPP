@@ -1,8 +1,13 @@
-antares-9.3.2-Ubuntu-22.04/
-GEMS-STS-Test/
-GEMS-Thermal-Test2/
+# Study data (user-created studies, not tracked in git)
+Studies/
+
+# Antares Simulator binaries (downloaded separately, not tracked in git)
+Solver/
+
+# Misc
 .claude/
 
+# Python
 venv/
 __pycache__/
 *.py[cod]
