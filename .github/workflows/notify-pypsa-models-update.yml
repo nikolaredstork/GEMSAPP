@@ -92,27 +92,13 @@ jobs:
             }
 
             const sourceUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
-            const commitUrl = `${sourceUrl}/commit/${context.sha}`;
 
             const body = [
-              '## PyPSA Models Library Updated',
+              `PyPSA models library updated to \`v${current}\` in [GEMSAPP](${sourceUrl}).`,
               '',
-              `The PyPSA models library version in [GEMSAPP](${sourceUrl}) has been updated.`,
+              `Changelog: ${sourceUrl}/blob/master/resources/pypsa_models/CHANGELOG-pypsa_models_library.md`,
               '',
-              '| | |',
-              '|---|---|',
-              `| **Previous version** | \`${previous}\` |`,
-              `| **New version** | \`${current}\` |`,
-              `| **Source commit** | [${context.sha.slice(0, 7)}](${commitUrl}) |`,
-              `| **Library tag** | \`pypsa_models-v${current}\` |`,
-              '',
-              'Review the changes and update the local PyPSA models library if needed.',
-              '',
-              '## Checklist',
-              '',
-              '- [ ] Changes in GEMSAPP reviewed',
-              '- [ ] Local PyPSA models library updated if required',
-              '- [ ] Issue closed once sync is complete',
+              'Update `libraries/pypsa_models.yml` in air-quality accordingly.',
             ].join('\n');
 
             const result = await github.rest.issues.create({
