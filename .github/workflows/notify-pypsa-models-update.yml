@@ -1,0 +1,118 @@
+name: Notify PyPSA Models Update
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: Check PyPSA models version and notify air-quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read current PyPSA models version
+        id: current
+        run: |
+          VERSION=$(jq -r '.pypsa_models_version' dependencies.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Current pypsa_models_version: $VERSION"
+
+      - name: Read previous PyPSA models version from last git tag
+        id: previous
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tag found — skipping notification."
+            echo "version=__no_tag__" >> "$GITHUB_OUTPUT"
+          else
+            echo "Last tag: $LAST_TAG"
+            PREV_VERSION=$(git show "${LAST_TAG}:dependencies.json" 2>/dev/null \
+              | jq -r '.pypsa_models_version // "none"' 2>/dev/null \
+              || echo "none")
+            echo "version=$PREV_VERSION" >> "$GITHUB_OUTPUT"
+            echo "Previous pypsa_models_version at ${LAST_TAG}: $PREV_VERSION"
+          fi
+
+      - name: Compare versions
+        id: compare
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+          PREVIOUS="${{ steps.previous.outputs.version }}"
+          echo "Current: $CURRENT  |  Previous: $PREVIOUS"
+          if [ "$PREVIOUS" = "__no_tag__" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No tag found — nothing to compare against."
+          elif [ "$CURRENT" = "$PREVIOUS" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Version unchanged — no notification needed."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Version changed from $PREVIOUS to $CURRENT — will notify air-quality."
+          fi
+
+      - name: Create issue in air-quality repo
+        if: steps.compare.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.AIR_QUALITY_REPO_PAT }}
+          script: |
+            const current  = '${{ steps.current.outputs.version }}';
+            const previous = '${{ steps.previous.outputs.version }}';
+            const title = `PyPSA models updated to v${current} in GEMSAPP`;
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: 'nikolaredstork',
+              repo: 'air-quality',
+              state: 'open',
+            });
+
+            const duplicate = existing.data.find(i =>
+              i.title.includes(`PyPSA models updated to v${current}`)
+            );
+            if (duplicate) {
+              console.log(`Issue already exists: #${duplicate.number} - skipping.`);
+              return;
+            }
+
+            const sourceUrl =
+              `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+            const commitUrl = `${sourceUrl}/commit/${context.sha}`;
+
+            const body = [
+              '## PyPSA Models Library Updated',
+              '',
+              `The PyPSA models library version in [GEMSAPP](${sourceUrl}) has been updated.`,
+              '',
+              '| | |',
+              '|---|---|',
+              `| **Previous version** | \`${previous}\` |`,
+              `| **New version** | \`${current}\` |`,
+              `| **Source commit** | [${context.sha.slice(0, 7)}](${commitUrl}) |`,
+              '',
+              'Review the changes and update the local PyPSA models library if needed.',
+              '',
+              '## Checklist',
+              '',
+              '- [ ] Changes in GEMSAPP reviewed',
+              '- [ ] Local PyPSA models library updated if required',
+              '- [ ] Issue closed once sync is complete',
+            ].join('\n');
+
+            const result = await github.rest.issues.create({
+              owner: 'nikolaredstork',
+              repo: 'air-quality',
+              title: title,
+              body: body,
+            });
+
+            console.log(`Issue created: #${result.data.number} - ${result.data.html_url}`);
