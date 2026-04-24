@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write  # required to push the library version tag
 
 jobs:
   notify:
@@ -27,18 +27,17 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Current pypsa_models_version: $VERSION"
 
-      - name: Read previous PyPSA models version from last git tag
+      - name: Read previous PyPSA models version from last library tag
         id: previous
         run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || echo "")
+          LAST_TAG=$(git tag --list 'pypsa_models-v*' --sort=-creatordate | head -1)
           if [ -z "$LAST_TAG" ]; then
-            echo "No previous tag found — skipping notification."
-            echo "version=__no_tag__" >> "$GITHUB_OUTPUT"
+            echo "No previous library tag found."
+            echo "version=none" >> "$GITHUB_OUTPUT"
           else
-            echo "Last tag: $LAST_TAG"
+            echo "Last library tag: $LAST_TAG"
             PREV_VERSION=$(git show "${LAST_TAG}:dependencies.json" 2>/dev/null \
-              | jq -r '.pypsa_models_version // "none"' 2>/dev/null \
-              || echo "none")
+              | jq -r '.pypsa_models_version // "none"')
             echo "version=$PREV_VERSION" >> "$GITHUB_OUTPUT"
             echo "Previous pypsa_models_version at ${LAST_TAG}: $PREV_VERSION"
           fi
@@ -49,16 +48,24 @@ jobs:
           CURRENT="${{ steps.current.outputs.version }}"
           PREVIOUS="${{ steps.previous.outputs.version }}"
           echo "Current: $CURRENT  |  Previous: $PREVIOUS"
-          if [ "$PREVIOUS" = "__no_tag__" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No tag found — nothing to compare against."
-          elif [ "$CURRENT" = "$PREVIOUS" ]; then
+          if [ "$CURRENT" = "$PREVIOUS" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Version unchanged — no notification needed."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Version changed from $PREVIOUS to $CURRENT — will notify air-quality."
+            echo "Version changed from $PREVIOUS to $CURRENT — will tag and notify."
           fi
+
+      - name: Create library version tag
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          VERSION="${{ steps.current.outputs.version }}"
+          TAG="pypsa_models-v${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created and pushed tag: $TAG"
 
       - name: Create issue in air-quality repo
         if: steps.compare.outputs.changed == 'true'
@@ -84,8 +91,7 @@ jobs:
               return;
             }
 
-            const sourceUrl =
-              `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+            const sourceUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
             const commitUrl = `${sourceUrl}/commit/${context.sha}`;
 
             const body = [
@@ -98,6 +104,7 @@ jobs:
               `| **Previous version** | \`${previous}\` |`,
               `| **New version** | \`${current}\` |`,
               `| **Source commit** | [${context.sha.slice(0, 7)}](${commitUrl}) |`,
+              `| **Library tag** | \`pypsa_models-v${current}\` |`,
               '',
               'Review the changes and update the local PyPSA models library if needed.',
               '',
