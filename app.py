@@ -19,7 +19,7 @@ SOLVERS_DIR = os.path.join(BASE_DIR, 'Solver')
 simulation_process = None
 simulation_running = False
 
-
+# testing
 def get_available_simulators():
     """Scan SOLVERS_DIR for antares simulator installations (directories containing bin/antares-modeler)."""
     import re
