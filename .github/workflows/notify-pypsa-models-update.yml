@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # required to push the library version tag
+  contents: read
 
 jobs:
   notify:
@@ -41,16 +41,6 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Create library version tag
-        if: steps.version.outputs.changed == 'true'
-        run: |
-          TAG="pypsa_models-v${{ steps.version.outputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG"
-          git push origin "$TAG"
-          echo "Created and pushed tag: $TAG"
 
       - name: Create issue in air-quality repo
         if: steps.version.outputs.changed == 'true'
