@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'libraries/pypsa_models.yml'
   workflow_dispatch:
 
 permissions:
@@ -15,52 +17,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository with full history
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Read current PyPSA models version
-        id: current
+      - name: Read current version and air-quality library version
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.AIR_QUALITY_REPO_PAT }}
         run: |
-          VERSION=$(jq -r '.pypsa_models_version' dependencies.json)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Current pypsa_models_version: $VERSION"
+          CURR=$(python3 -c "import yaml; print(yaml.safe_load(open('libraries/pypsa_models.yml'))['library']['version'])")
+          echo "version=$CURR" >> "$GITHUB_OUTPUT"
 
-      - name: Read previous PyPSA models version from last library tag
-        id: previous
-        run: |
-          LAST_TAG=$(git tag --list 'pypsa_models-v*' --sort=-creatordate | head -1)
-          if [ -z "$LAST_TAG" ]; then
-            echo "No previous library tag found."
-            echo "version=none" >> "$GITHUB_OUTPUT"
-          else
-            echo "Last library tag: $LAST_TAG"
-            PREV_VERSION=$(git show "${LAST_TAG}:dependencies.json" 2>/dev/null \
-              | jq -r '.pypsa_models_version // "none"')
-            echo "version=$PREV_VERSION" >> "$GITHUB_OUTPUT"
-            echo "Previous pypsa_models_version at ${LAST_TAG}: $PREV_VERSION"
-          fi
+          # Read the version currently in the air-quality repo (empty string if file absent or API unavailable)
+          AIR_VERSION=$(gh api "repos/nikolaredstork/air-quality/contents/libraries/pypsa_models.yml" \
+            --jq '.content' 2>/dev/null \
+            | base64 -d 2>/dev/null \
+            | python3 -c "import yaml,sys; print(yaml.safe_load(sys.stdin).get('library', {}).get('version', ''))" \
+            2>/dev/null || echo "")
 
-      - name: Compare versions
-        id: compare
-        run: |
-          CURRENT="${{ steps.current.outputs.version }}"
-          PREVIOUS="${{ steps.previous.outputs.version }}"
-          echo "Current: $CURRENT  |  Previous: $PREVIOUS"
-          if [ "$CURRENT" = "$PREVIOUS" ]; then
+          echo "Current: $CURR  |  air-quality: $AIR_VERSION"
+          if [ "$CURR" = "$AIR_VERSION" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Version unchanged — no notification needed."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Version changed from $PREVIOUS to $CURRENT — will tag and notify."
           fi
 
       - name: Create library version tag
-        if: steps.compare.outputs.changed == 'true'
+        if: steps.version.outputs.changed == 'true'
         run: |
-          VERSION="${{ steps.current.outputs.version }}"
-          TAG="pypsa_models-v${VERSION}"
+          TAG="pypsa_models-v${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "$TAG"
@@ -68,14 +53,14 @@ jobs:
           echo "Created and pushed tag: $TAG"
 
       - name: Create issue in air-quality repo
-        if: steps.compare.outputs.changed == 'true'
+        if: steps.version.outputs.changed == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.AIR_QUALITY_REPO_PAT }}
           script: |
-            const current  = '${{ steps.current.outputs.version }}';
-            const previous = '${{ steps.previous.outputs.version }}';
-            const title = `PyPSA models updated to v${current} in GEMSAPP`;
+            const version   = '${{ steps.version.outputs.version }}';
+            const sourceUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+            const title     = `PyPSA models updated to v${version} in GEMSAPP`;
 
             const existing = await github.rest.issues.listForRepo({
               owner: 'nikolaredstork',
@@ -83,20 +68,14 @@ jobs:
               state: 'open',
             });
 
-            const duplicate = existing.data.find(i =>
-              i.title.includes(`PyPSA models updated to v${current}`)
-            );
+            const duplicate = existing.data.find(i => i.title.includes(`v${version}`));
             if (duplicate) {
-              console.log(`Issue already exists: #${duplicate.number} - skipping.`);
+              console.log(`Issue already exists: #${duplicate.number} — skipping.`);
               return;
             }
 
-            const sourceUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
-
             const body = [
-              `PyPSA models library updated to \`v${current}\` in [GEMSAPP](${sourceUrl}).`,
-              '',
-              `Changelog: ${sourceUrl}/blob/master/resources/pypsa_models/CHANGELOG-pypsa_models_library.md`,
+              `PyPSA models library updated to \`v${version}\` in [GEMSAPP](${sourceUrl}).`,
               '',
               'Update `libraries/pypsa_models.yml` in air-quality accordingly.',
             ].join('\n');
@@ -108,4 +87,4 @@ jobs:
               body: body,
             });
 
-            console.log(`Issue created: #${result.data.number} - ${result.data.html_url}`);
+            console.log(`Issue created: #${result.data.number} — ${result.data.html_url}`);

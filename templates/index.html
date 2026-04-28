@@ -1978,15 +1978,24 @@ function showStats(label, stats, color) {
   const card = document.createElement('div');
   card.className = 'stat-card';
   card.dataset.series = label;
-  card.innerHTML = `
-    <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">
-      <div class="chip-dot" style="background:${color};width:8px;height:8px;border-radius:50%;"></div>
-      <b style="color:var(--text);font-size:11px;">${label}</b>
-    </div>
-    <span>min</span><b>${fmt(stats.min)}</b> &nbsp;
-    <span>max</span><b>${fmt(stats.max)}</b> &nbsp;
-    <span>mean</span><b>${fmt(stats.mean)}</b> &nbsp;
-    <span>sum</span><b>${fmt(stats.sum)}</b>`;
+  const dot = `<div class="chip-dot" style="background:${color};width:8px;height:8px;border-radius:50%;"></div>`;
+  if (stats.scalar !== undefined) {
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">${dot}
+        <b style="color:var(--text);font-size:11px;">${label}</b>
+        <span style="font-size:10px;color:var(--muted);">(scalar)</span>
+      </div>
+      <span>value</span><b>${fmt(stats.scalar)}</b>`;
+  } else {
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">${dot}
+        <b style="color:var(--text);font-size:11px;">${label}</b>
+      </div>
+      <span>min</span><b>${fmt(stats.min)}</b> &nbsp;
+      <span>max</span><b>${fmt(stats.max)}</b> &nbsp;
+      <span>mean</span><b>${fmt(stats.mean)}</b> &nbsp;
+      <span>sum</span><b>${fmt(stats.sum)}</b>`;
+  }
   bar.appendChild(card);
 }
 
@@ -2027,30 +2036,43 @@ function setResView(v) {
 }
 
 function buildResTable() {
-  const tbl     = document.getElementById('res-table');
-  const noData  = document.getElementById('res-table-no-data');
+  const tbl    = document.getElementById('res-table');
+  const noData = document.getElementById('res-table-no-data');
   if (!seriesStore.length) { tbl.style.display='none'; noData.style.display='block'; return; }
   noData.style.display = 'none';
   tbl.style.display    = '';
 
-  // Header
-  let html = '<thead><tr><th class="row-hdr">Time Step</th>';
-  seriesStore.forEach(s => {
-    html += `<th style="color:${s.color}">${s.label}</th>`;
-  });
-  html += '</tr></thead><tbody>';
+  const timeSeries = seriesStore.filter(s => !s.scalar);
+  const scalars    = seriesStore.filter(s => s.scalar);
 
-  // Rows — use first series time steps as reference
-  const times = seriesStore[0].times;
-  times.forEach((t, i) => {
-    html += `<tr><td class="row-hdr">h${t}</td>`;
-    seriesStore.forEach(s => {
-      const v = s.values[i];
-      html += `<td>${v != null ? fmt(v) : '—'}</td>`;
+  let html = '';
+
+  if (timeSeries.length) {
+    html += '<thead><tr><th class="row-hdr">Time Step</th>';
+    timeSeries.forEach(s => { html += `<th style="color:${s.color}">${s.label}</th>`; });
+    html += '</tr></thead><tbody>';
+    const times = timeSeries[0].times;
+    times.forEach((t, i) => {
+      html += `<tr><td class="row-hdr">h${t}</td>`;
+      timeSeries.forEach(s => {
+        const v = s.values[i];
+        html += `<td>${v != null ? fmt(v) : '—'}</td>`;
+      });
+      html += '</tr>';
     });
-    html += '</tr>';
-  });
-  html += '</tbody>';
+    html += '</tbody>';
+  }
+
+  if (scalars.length) {
+    const colspan = (timeSeries.length || 0) + 1;
+    html += `<thead><tr><th class="row-hdr" colspan="${colspan}" style="color:var(--muted);font-weight:normal;padding-top:10px;">Scalar outputs</th></tr>`;
+    html += '<tr><th class="row-hdr">Variable</th><th>Value</th></tr></thead><tbody>';
+    scalars.forEach(s => {
+      html += `<tr><td class="row-hdr" style="color:${s.color}">${s.label}</td><td>${fmt(s.scalarValue)}</td></tr>`;
+    });
+    html += '</tbody>';
+  }
+
   tbl.innerHTML = html;
 }
 
@@ -2269,25 +2291,27 @@ async function addSeries() {
   const color = nextColor();
   const label = `${comp}.${out} (s${scen})`;
 
-  seriesStore.push({ label, color, times: data.times, values: data.values });
-
   document.getElementById('res-no-data').style.display = 'none';
-  if (!resChart) initChart();
+  seriesStore.push({ label, color, times: data.times, values: data.values, scalar: data.scalar, scalarValue: data.value });
 
-  if (resChart.data.datasets.length === 0) resChart.data.labels = data.times;
-  resChart.data.datasets.push({
-    label, data: data.values,
-    borderColor: color, backgroundColor: color + '22',
-    borderWidth: 1.5, pointRadius: data.times.length > 100 ? 0 : 2,
-    tension: 0.2, fill: false,
-  });
-  resChart.update();
-  safeResize(resChart);
+  if (data.scalar) {
+    showStats(label, data.stats, color);
+    log(`Scalar added: ${label} = ${fmt(data.value)}`, 'ok');
+  } else {
+    if (!resChart) initChart();
+    if (resChart.data.datasets.length === 0) resChart.data.labels = data.times;
+    resChart.data.datasets.push({
+      label, data: data.values,
+      borderColor: color, backgroundColor: color + '22',
+      borderWidth: 1.5, pointRadius: data.times.length > 100 ? 0 : 2,
+      tension: 0.2, fill: false,
+    });
+    resChart.update();
+    safeResize(resChart);
+    showStats(label, data.stats, color);
+    log(`Series added: ${label} (${data.times.length} time steps)`, 'ok');
+  }
 
-  showStats(label, data.stats, color);
-  log(`Series added: ${label} (${data.times.length} time steps)`, 'ok');
-
-  // Refresh table if visible
   if (resView === 'table') buildResTable();
 }
 

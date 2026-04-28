@@ -440,7 +440,8 @@ def results_meta():
             if comp == 'None' and out == 'OBJECTIVE_VALUE':
                 objective = float(row['value'])
                 continue
-            scenarios.add(row['scenario_index'])
+            if row['scenario_index'] != 'None':
+                scenarios.add(row['scenario_index'])
             components.setdefault(comp, set()).add(out)
 
     return jsonify({
@@ -465,23 +466,32 @@ def results_series():
     if not os.path.isfile(path):
         return jsonify({'error': 'file not found'}), 404
 
-    times, values = [], []
+    times, values, scalar_val = [], [], None
     with open(path, newline='') as f:
         for row in csv.DictReader(f):
-            if row['component'] != component or row['output'] != output or row['scenario_index'] != scenario:
+            if row['component'] != component or row['output'] != output:
                 continue
             t, v = row['absolute_time_index'], row['value']
-            if t == 'None' or v == 'None':
+            # time-independent rows have scenario_index=None in the CSV — include them regardless of scenario filter
+            if t != 'None' and row['scenario_index'] != scenario:
                 continue
-            times.append(int(t))
-            values.append(float(v))
+            if v == 'None':
+                continue
+            if t == 'None':
+                scalar_val = float(v)
+            else:
+                times.append(int(t))
+                values.append(float(v))
+
+    if scalar_val is not None and not times:
+        return jsonify({'scalar': True, 'value': scalar_val, 'times': [], 'values': [], 'stats': {'scalar': scalar_val}})
 
     paired = sorted(zip(times, values))
     times  = [p[0] for p in paired]
     values = [p[1] for p in paired]
     stats  = {'min': min(values), 'max': max(values), 'mean': statistics.mean(values), 'sum': sum(values)} if values else {}
 
-    return jsonify({'times': times, 'values': values, 'stats': stats})
+    return jsonify({'scalar': False, 'times': times, 'values': values, 'stats': stats})
 
 
 @app.route('/api/timeseries/list')
