@@ -44,7 +44,7 @@ jobs:
 
       - name: Create issue in air-quality repo
         if: steps.version.outputs.changed == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.AIR_QUALITY_REPO_PAT }}
           script: |
