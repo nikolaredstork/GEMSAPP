@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install flask flask-socketio pyyaml
+pip install -r requirements.txt
 python app.py          # opens at http://localhost:5000
 ```
 
@@ -57,7 +57,7 @@ Studies/MyStudy/
 │   ├── model-libraries/*.yml   # GEMS model library files
 │   └── data-series/*.csv       # Time-series inputs (one value per row, one column per scenario)
 └── output/
-    └── simulation_table--YYYYMMDD-HHMM.csv   # Results written by antares-modeler
+    └── YYYYMMDD-HHMM/simulation_table.csv   # Results written by antares-modeler (one subfolder per run)
 ```
 
 **`system.yml`** references models as `<library_id>.<model_id>` (e.g. `pypsa_models.bus`). Parameter `value` can be a scalar or the stem of a `data-series/` CSV filename when `time-dependent: true`.

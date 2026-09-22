@@ -4,12 +4,14 @@ import yaml
 import subprocess
 import threading
 import os
+import glob
 import json
 import csv
 import statistics
+import secrets
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'gems-secret-key'
+app.config['SECRET_KEY'] = os.environ.get('GEMSAPP_SECRET_KEY') or secrets.token_hex(32)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +21,6 @@ SOLVERS_DIR = os.path.join(BASE_DIR, 'Solver')
 simulation_process = None
 simulation_running = False
 
-# testing
 def get_available_simulators():
     """Scan SOLVERS_DIR for antares simulator installations (directories containing bin/antares-modeler)."""
     import re
@@ -50,6 +51,41 @@ def get_available_simulators():
     return simulators
 
 
+def _is_safe_component(name):
+    """Reject empty, absolute, or traversal-containing path segments."""
+    if not name or os.path.isabs(name):
+        return False
+    return all(part not in ('', '.', '..') for part in name.replace('\\', '/').split('/'))
+
+
+def safe_join(base_dir, *parts):
+    """Join base_dir with parts, returning None if the result would escape base_dir."""
+    if not all(_is_safe_component(p) for p in parts):
+        return None
+    candidate = os.path.realpath(os.path.join(base_dir, *parts))
+    base = os.path.realpath(base_dir)
+    if candidate != base and not candidate.startswith(base + os.sep):
+        return None
+    return candidate
+
+
+# antares-modeler accepts either extension for a data-series file (DataSeriesRepoImporter::
+# hasRightExtension in the Antares_Simulator source checks for both), but always parses the
+# content as TAB-delimited regardless of which one is used -- comma-delimited content throws,
+# which is caught by a blanket handler that silently empties the *entire* data-series repo for
+# the study, not just the one bad file. So GEMSAPP must read/write tab-delimited too.
+DATA_SERIES_EXTENSIONS = ('.tsv', '.csv')
+
+
+def find_data_series_path(data_dir, name):
+    """Return the path to `name`'s data-series file, trying each accepted extension."""
+    for ext in DATA_SERIES_EXTENSIONS:
+        candidate = safe_join(data_dir, name + ext)
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return None
+
+
 def get_study_paths(study_id):
     study_dir = os.path.join(STUDIES_DIR, study_id)
     return {
@@ -57,6 +93,7 @@ def get_study_paths(study_id):
         'lib_dir':    os.path.join(study_dir, "input", "model-libraries"),
         'system':     os.path.join(study_dir, "input", "system.yml"),
         'params':     os.path.join(study_dir, "parameters.yml"),
+        'optim_config':os.path.join(study_dir, "input", "optim-config.yml"),
         'layout':     os.path.join(study_dir, "input", ".layout.json"),
         'data_series':os.path.join(study_dir, "input", "data-series"),
     }
@@ -142,6 +179,8 @@ def require_study(source='args'):
         study_id = (request.json or {}).get('study', '').strip()
     if not study_id:
         return None, (jsonify({'error': 'study parameter is required'}), 400)
+    if not _is_safe_component(study_id):
+        return None, (jsonify({'error': 'Invalid study parameter'}), 400)
     return study_id, None
 
 
@@ -164,13 +203,10 @@ def list_studies():
 @app.route('/api/studies/<study_id>', methods=['DELETE'])
 def delete_study(study_id):
     import shutil
-    study_dir = os.path.join(STUDIES_DIR, study_id)
-    # Safety: must be a direct child of STUDIES_DIR and have parameters.yml
-    if not os.path.isdir(study_dir) or not os.path.exists(os.path.join(study_dir, 'parameters.yml')):
+    study_dir = safe_join(STUDIES_DIR, study_id)
+    # Safety: must resolve to a direct child of STUDIES_DIR and have parameters.yml
+    if not study_dir or not os.path.isdir(study_dir) or not os.path.exists(os.path.join(study_dir, 'parameters.yml')):
         return jsonify({'error': 'Study not found'}), 404
-    # Prevent path traversal
-    if os.path.realpath(study_dir) != os.path.realpath(os.path.join(STUDIES_DIR, study_id)):
-        return jsonify({'error': 'Invalid study path'}), 400
     shutil.rmtree(study_dir)
     return jsonify({'status': 'ok'})
 
@@ -183,7 +219,7 @@ def create_study():
         return jsonify({'error': 'Study name is required'}), 400
     # Basic filename safety
     import re
-    if not re.match(r'^[\w\-. ]+$', name):
+    if not re.match(r'^[\w\-. ]+$', name) or not _is_safe_component(name):
         return jsonify({'error': 'Name may only contain letters, digits, spaces, hyphens, underscores and dots'}), 400
     os.makedirs(STUDIES_DIR, exist_ok=True)
     study_dir = os.path.join(STUDIES_DIR, name)
@@ -242,8 +278,8 @@ def get_library():
     if not filename:
         return jsonify({'error': 'file required'}), 400
     paths = get_study_paths(study_id)
-    path  = os.path.join(paths['lib_dir'], filename)
-    if not os.path.isfile(path):
+    path  = safe_join(paths['lib_dir'], filename)
+    if not path or not os.path.isfile(path):
         return jsonify({'error': 'not found'}), 404
     with open(path) as f:
         data = yaml.safe_load(f)
@@ -260,8 +296,10 @@ def save_library():
     if not filename or not lib_data:
         return jsonify({'error': 'file and data required'}), 400
     paths = get_study_paths(study_id)
+    path = safe_join(paths['lib_dir'], filename)
+    if not path:
+        return jsonify({'error': 'Invalid file parameter'}), 400
     os.makedirs(paths['lib_dir'], exist_ok=True)
-    path = os.path.join(paths['lib_dir'], filename)
     with open(path, 'w') as f:
         yaml.dump(normalize_library(lib_data), f, default_flow_style=False, sort_keys=False, allow_unicode=True)
     return jsonify({'status': 'ok'})
@@ -283,11 +321,11 @@ def get_system():
 
     data_series = []
     if os.path.exists(paths['data_series']):
-        data_series = sorted([
+        data_series = sorted({
             os.path.splitext(fn)[0]
             for fn in os.listdir(paths['data_series'])
-            if fn.endswith('.csv')
-        ])
+            if fn.endswith(DATA_SERIES_EXTENSIONS)
+        })
 
     with open(paths['params'], 'r') as f:
         params = yaml.safe_load(f)
@@ -328,10 +366,110 @@ def list_simulators():
     return jsonify(get_available_simulators())
 
 
+# antares-modeler solvers (from OrtoolsUtils::mpSolverMap in Antares_Simulator source).
+# "sirius" and "pdlp" are LP-only and will fail antares-modeler at run time on a MIP study
+# (e.g. any committable generator/link) -- left selectable since GEMSAPP can't tell in
+# advance whether a study needs MIP.
+KNOWN_SOLVERS = ['highs', 'coin', 'xpress', 'scip', 'glpk', 'gurobi', 'sirius', 'pdlp']
+
+
+@app.route('/api/parameters')
+def get_parameters():
+    study_id, err = require_study()
+    if err: return err
+    paths = get_study_paths(study_id)
+    if not os.path.isfile(paths['params']):
+        return jsonify({'error': 'parameters.yml not found'}), 404
+    with open(paths['params']) as f:
+        params = yaml.safe_load(f) or {}
+    return jsonify(params)
+
+
+@app.route('/api/parameters', methods=['POST'])
+def save_parameters():
+    study_id, err = require_study('json')
+    if err: return err
+    req   = request.json or {}
+    paths = get_study_paths(study_id)
+
+    try:
+        first_ts = int(req.get('first-time-step', 0))
+        last_ts  = int(req.get('last-time-step', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'first-time-step and last-time-step must be integers'}), 400
+    if first_ts < 0 or last_ts < first_ts:
+        return jsonify({'error': 'last-time-step must be >= first-time-step >= 0'}), 400
+
+    solver = str(req.get('solver', 'coin')).strip().lower()
+    if solver not in KNOWN_SOLVERS:
+        return jsonify({'error': f'Unknown solver "{solver}". Expected one of: {", ".join(KNOWN_SOLVERS)}'}), 400
+
+    params = {
+        'first-time-step':   first_ts,
+        'last-time-step':    last_ts,
+        'no-output':         bool(req.get('no-output', False)),
+        'solver':            solver,
+        'solver-logs':       bool(req.get('solver-logs', False)),
+        'solver-parameters': str(req.get('solver-parameters', '')),
+        'export-mps':        bool(req.get('export-mps', False)),
+    }
+    os.makedirs(paths['dir'], exist_ok=True)
+    with open(paths['params'], 'w') as f:
+        yaml.dump(params, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return jsonify({'status': 'ok'})
+
+
+# optim-config.yml controls Benders-decomposition model splitting for investment/Xpansion
+# studies (resolution-mode, per-model variable/objective-contribution locations, and
+# out-of-bounds-processing). Its schema is a nested, open-ended structure, so it's edited
+# as raw YAML here rather than through a bespoke form -- GEMSAPP just guarantees it parses
+# as a YAML mapping before writing it.
+@app.route('/api/optim-config')
+def get_optim_config():
+    study_id, err = require_study()
+    if err: return err
+    paths = get_study_paths(study_id)
+    if not os.path.isfile(paths['optim_config']):
+        return jsonify({'exists': False, 'content': ''})
+    with open(paths['optim_config']) as f:
+        content = f.read()
+    return jsonify({'exists': True, 'content': content})
+
+
+@app.route('/api/optim-config', methods=['POST'])
+def save_optim_config():
+    study_id, err = require_study('json')
+    if err: return err
+    req     = request.json or {}
+    content = req.get('content', '')
+    if not isinstance(content, str) or not content.strip():
+        return jsonify({'error': 'content is required'}), 400
+    try:
+        parsed = yaml.safe_load(content)
+    except yaml.YAMLError as e:
+        return jsonify({'error': f'Invalid YAML: {e}'}), 400
+    if not isinstance(parsed, dict):
+        return jsonify({'error': 'optim-config.yml must be a YAML mapping at the top level'}), 400
+
+    paths = get_study_paths(study_id)
+    os.makedirs(os.path.dirname(paths['optim_config']), exist_ok=True)
+    with open(paths['optim_config'], 'w') as f:
+        f.write(content)
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/optim-config', methods=['DELETE'])
+def delete_optim_config():
+    study_id, err = require_study('json')
+    if err: return err
+    paths = get_study_paths(study_id)
+    if os.path.isfile(paths['optim_config']):
+        os.remove(paths['optim_config'])
+    return jsonify({'status': 'ok'})
+
+
 @app.route('/api/simulate', methods=['POST'])
 def run_simulation():
-    global simulation_process, simulation_running
-
     if simulation_running:
         return jsonify({'error': 'Simulation already running'}), 400
 
@@ -390,7 +528,7 @@ def run_simulation():
 
 @app.route('/api/simulate/stop', methods=['POST'])
 def stop_simulation():
-    global simulation_process, simulation_running
+    global simulation_running
     if simulation_process:
         simulation_process.terminate()
         simulation_running = False
@@ -412,11 +550,36 @@ def list_results():
     output_dir = os.path.join(STUDIES_DIR, study_id, 'output')
     if not os.path.isdir(output_dir):
         return jsonify([])
+    # antares-modeler writes each run into its own output/<timestamp>/ subfolder; older/manual
+    # results may sit flat in output/ directly. Look in both, newest run first.
+    matches = glob.glob(os.path.join(output_dir, '**', 'simulation_table*.csv'), recursive=True)
     files = sorted(
-        [f for f in os.listdir(output_dir) if f.startswith('simulation_table') and f.endswith('.csv')],
-        reverse=True
+        (os.path.relpath(m, output_dir).replace(os.sep, '/') for m in matches),
+        key=lambda f: os.path.getmtime(os.path.join(output_dir, f)),
+        reverse=True,
     )
     return jsonify(files)
+
+
+@app.route('/api/results/debug-files')
+def results_debug_files():
+    """Sibling .mps / structure.txt files antares-modeler writes next to a run's
+    simulation_table.csv when parameters.yml sets export-mps: true."""
+    study_id, err = require_study()
+    if err: return err
+    filename = request.args.get('file')
+    if not filename:
+        return jsonify({'error': 'file required'}), 400
+    output_dir = os.path.join(STUDIES_DIR, study_id, 'output')
+    run_dir = safe_join(output_dir, os.path.dirname(filename)) if os.path.dirname(filename) else output_dir
+    if not run_dir or not os.path.isdir(run_dir):
+        return jsonify([])
+    debug_files = sorted(
+        f for f in os.listdir(run_dir) if f.endswith('.mps') or f == 'structure.txt'
+    )
+    prefix = os.path.dirname(filename)
+    paths = [f'{prefix}/{f}' if prefix else f for f in debug_files]
+    return jsonify(paths)
 
 
 @app.route('/api/results/meta')
@@ -426,8 +589,8 @@ def results_meta():
     filename = request.args.get('file')
     if not filename:
         return jsonify({'error': 'file required'}), 400
-    path = os.path.join(STUDIES_DIR, study_id, 'output', filename)
-    if not os.path.isfile(path):
+    path = safe_join(os.path.join(STUDIES_DIR, study_id, 'output'), filename)
+    if not path or not os.path.isfile(path):
         return jsonify({'error': 'file not found'}), 404
 
     components = {}
@@ -462,8 +625,8 @@ def results_series():
 
     if not all([filename, component, output]):
         return jsonify({'error': 'file, component and output required'}), 400
-    path = os.path.join(STUDIES_DIR, study_id, 'output', filename)
-    if not os.path.isfile(path):
+    path = safe_join(os.path.join(STUDIES_DIR, study_id, 'output'), filename)
+    if not path or not os.path.isfile(path):
         return jsonify({'error': 'file not found'}), 404
 
     times, values, scalar_val = [], [], None
@@ -501,7 +664,9 @@ def list_timeseries():
     paths = get_study_paths(study_id)
     if not os.path.isdir(paths['data_series']):
         return jsonify([])
-    files = sorted([os.path.splitext(f)[0] for f in os.listdir(paths['data_series']) if f.endswith('.csv')])
+    files = sorted({
+        os.path.splitext(f)[0] for f in os.listdir(paths['data_series']) if f.endswith(DATA_SERIES_EXTENSIONS)
+    })
     return jsonify(files)
 
 
@@ -513,12 +678,12 @@ def get_timeseries():
     if not filename:
         return jsonify({'error': 'file required'}), 400
     paths = get_study_paths(study_id)
-    path  = os.path.join(paths['data_series'], filename + '.csv')
-    if not os.path.isfile(path):
+    path  = find_data_series_path(paths['data_series'], filename)
+    if not path:
         return jsonify({'error': 'file not found'}), 404
     rows = []
     with open(path, newline='') as f:
-        for row in csv.reader(f):
+        for row in csv.reader(f, delimiter='\t'):
             rows.append(row)
     return jsonify({'file': filename, 'rows': rows})
 
@@ -532,8 +697,8 @@ def delete_timeseries():
     if not filename:
         return jsonify({'error': 'file required'}), 400
     paths = get_study_paths(study_id)
-    path  = os.path.join(paths['data_series'], filename + '.csv')
-    if not os.path.isfile(path):
+    path  = find_data_series_path(paths['data_series'], filename)
+    if not path:
         return jsonify({'error': 'not found'}), 404
     os.remove(path)
     return jsonify({'status': 'ok'})
@@ -548,8 +713,8 @@ def delete_library():
     if not filename:
         return jsonify({'error': 'file required'}), 400
     paths = get_study_paths(study_id)
-    path  = os.path.join(paths['lib_dir'], filename)
-    if not os.path.isfile(path):
+    path  = safe_join(paths['lib_dir'], filename)
+    if not path or not os.path.isfile(path):
         return jsonify({'error': 'not found'}), 404
     os.remove(path)
     return jsonify({'status': 'ok'})
@@ -565,9 +730,17 @@ def save_timeseries():
     if not filename:
         return jsonify({'error': 'file required'}), 400
     paths = get_study_paths(study_id)
-    path  = os.path.join(paths['data_series'], filename + '.csv')
+    # Overwrite the existing file's extension if there is one; new series default to .tsv,
+    # since antares-modeler always reads data-series content as tab-delimited regardless of
+    # which of .csv/.tsv the file is named -- comma-delimited content breaks the whole study
+    # (see DATA_SERIES_EXTENSIONS comment above).
+    path = find_data_series_path(paths['data_series'], filename) \
+        or safe_join(paths['data_series'], filename + '.tsv')
+    if not path:
+        return jsonify({'error': 'Invalid file parameter'}), 400
+    os.makedirs(paths['data_series'], exist_ok=True)
     with open(path, 'w', newline='') as f:
-        csv.writer(f).writerows(rows)
+        csv.writer(f, delimiter='\t').writerows(rows)
     return jsonify({'status': 'ok'})
 
 

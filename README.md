@@ -21,23 +21,23 @@ cd GEMSAPP
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install flask flask-socketio pyyaml
+pip install -r requirements.txt
 ```
 
 ### 3. Set up Antares Modeler
 
-Download and extract the Antares binary package into the project root so that the path is:
+Download and extract the Antares binary package into the `Solver/` subdirectory so that the path is:
 
 ```
-GEMSAPP/antares-9.3.2-Ubuntu-22.04/bin/antares-modeler
+GEMSAPP/Solver/antares-10.1.1-Ubuntu-22.04/bin/antares-modeler
 ```
 
 ### 4. Prepare a study
 
-At least one study must exist in the project root. Study structure:
+At least one study must exist in the `Studies/` subdirectory. Study structure:
 
 ```
-MyStudy/
+Studies/MyStudy/
 ├── parameters.yml
 ├── input/
 │   ├── system.yml
@@ -84,7 +84,7 @@ The web interface works on Windows, but there are a few differences:
   venv\Scripts\activate
   ```
 
-- **Antares Modeler:** the binary included (`antares-9.3.2-Ubuntu-22.04`) is a Linux binary and will not run on Windows. A Windows build of Antares Modeler is required for simulation.
+- **Antares Modeler:** a Linux build placed in `Solver/` will not run on Windows. A Windows build of Antares Modeler is required for simulation.
 
 ## Usage
 

@@ -19,8 +19,38 @@ jobs:
           echo "Current version:"
           cat versions/antares-simulator.txt
 
-      - name: Fake validation
+      - name: Download and verify Antares release binary
         run: |
-          echo "Simulating Antares validation..."
-          sleep 5
-          echo "Validation SUCCESS"
+          set -euo pipefail
+
+          VERSION=$(grep 'ANTARES_SIMULATOR_VERSION' versions/antares-simulator.txt | cut -d'=' -f2 | tr -d '[:space:]')
+          ASSET="antares-${VERSION}-Ubuntu-22.04.tar.gz"
+          URL="https://github.com/AntaresSimulatorTeam/Antares_Simulator/releases/download/v${VERSION}/${ASSET}"
+
+          echo "Validating Antares Simulator v${VERSION}"
+          echo "Downloading ${URL}"
+          if ! curl -sfL -o "${ASSET}" "${URL}"; then
+            echo "ERROR: could not download release asset ${ASSET}"
+            exit 1
+          fi
+
+          mkdir -p /tmp/antares-validate
+          tar -xzf "${ASSET}" -C /tmp/antares-validate
+
+          MODELER=$(find /tmp/antares-validate -type f -path '*/bin/antares-modeler' | head -1)
+          if [ -z "$MODELER" ]; then
+            echo "ERROR: antares-modeler binary not found in release archive"
+            exit 1
+          fi
+          chmod +x "$MODELER"
+
+          echo "Found binary: $MODELER"
+          "$MODELER" --help > /tmp/antares-validate-output.log 2>&1 || true
+          cat /tmp/antares-validate-output.log
+
+          if ! grep -qi "study path" /tmp/antares-validate-output.log; then
+            echo "ERROR: antares-modeler did not respond as expected"
+            exit 1
+          fi
+
+          echo "Validation SUCCESS: antares-modeler v${VERSION} starts correctly"

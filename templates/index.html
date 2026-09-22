@@ -482,6 +482,7 @@
     <button id="tab-data"    class="tab-btn"        onclick="switchTab('data')">Data</button>
     <button id="tab-library" class="tab-btn"        onclick="switchTab('library')">Library</button>
     <button id="tab-results" class="tab-btn"        onclick="switchTab('results')">Results</button>
+    <button id="tab-params"  class="tab-btn"        onclick="switchTab('params')">Parameters</button>
   </div>
   <div class="sep"></div>
   <!-- Editor-only buttons -->
@@ -561,6 +562,9 @@
 
       <!-- Objective banner -->
       <div id="res-objective" style="display:none;"></div>
+
+      <!-- Debug files (export-mps: true) -->
+      <div id="res-debug-files" style="display:none;padding:2px 14px 6px;font-size:11px;color:var(--muted);"></div>
 
       <!-- Chart view -->
       <div id="res-chart-view" style="flex:1;position:relative;padding:10px 14px 2px;display:flex;flex-direction:column;">
@@ -717,6 +721,76 @@
       </div>
     </div>
   </div>
+
+  <!-- PARAMETERS -->
+  <div id="params-view" style="display:none;flex:1;overflow:auto;justify-content:center;">
+    <div style="max-width:640px;width:100%;padding:24px 20px;">
+      <h2 style="margin:0 0 4px;">Simulation Parameters</h2>
+      <div style="color:var(--muted);font-size:11px;margin-bottom:18px;">parameters.yml — controls how antares-modeler solves this study</div>
+
+      <div class="form-row">
+        <label class="form-label">Solver</label>
+        <select id="param-solver" class="form-input"></select>
+        <div class="form-hint">OR-Tools backend antares-modeler uses. If one solver reports the study as infeasible, try another (e.g. "coin") before assuming the model is wrong.</div>
+      </div>
+
+      <div class="form-row" style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label class="form-label">First time step</label>
+          <input id="param-first-ts" class="form-input" type="number" min="0" step="1">
+        </div>
+        <div style="flex:1;">
+          <label class="form-label">Last time step</label>
+          <input id="param-last-ts" class="form-input" type="number" min="0" step="1">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Solver-specific parameters</label>
+        <input id="param-solver-params" class="form-input" type="text" placeholder="e.g. THREADS 1" autocomplete="off">
+        <div class="form-hint">⚠ Not applied by antares-modeler in this Antares Simulator version (v10.1.1) — parsed from this file but never passed to the solver. Kept here for forward-compatibility and for solvers/paths where it is honored.</div>
+      </div>
+
+      <div class="form-row" style="display:flex;gap:16px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+          <input id="param-solver-logs" type="checkbox"> Solver logs
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+          <input id="param-no-output" type="checkbox"> No output
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;" title="Writes the raw MILP as .mps file(s) next to the results, so it can be independently checked in another solver -- useful when a study reports infeasible and you want a second opinion.">
+          <input id="param-export-mps" type="checkbox"> Export MPS
+        </label>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-top:18px;">
+        <button class="btn success" onclick="saveParameters()">💾 Save</button>
+        <button class="btn" onclick="loadParameters()">↻ Reload</button>
+        <span id="param-status" style="font-size:11px;color:var(--muted);"></span>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:28px 0 18px;">
+
+      <div style="display:flex;align-items:baseline;justify-content:space-between;">
+        <h2 style="margin:0 0 4px;">Optimization Config</h2>
+        <span id="optim-config-badge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg);color:var(--muted);"></span>
+      </div>
+      <div style="color:var(--muted);font-size:11px;margin-bottom:12px;">
+        input/optim-config.yml — Benders-decomposition model splitting for investment/Xpansion studies (which variables/objective-contributions go to the master problem vs. subproblems). Only needed for investment studies; leave absent for ordinary operational runs.
+      </div>
+
+      <div id="optim-config-editor" style="display:none;">
+        <textarea id="optim-config-text" class="form-input" style="width:100%;min-height:260px;font-family:monospace;font-size:12px;white-space:pre;" spellcheck="false"></textarea>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+          <button class="btn success" onclick="saveOptimConfig()">💾 Save</button>
+          <button class="btn" onclick="loadOptimConfig()">↻ Reload</button>
+          <button class="btn danger" onclick="deleteOptimConfig()">🗑 Delete</button>
+          <span id="optim-config-status" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+      </div>
+      <button id="optim-config-create-btn" class="btn" onclick="createOptimConfig()">+ Create optim-config.yml</button>
+    </div>
+  </div>
 </div>
 
 <!-- CONSOLE -->
@@ -795,7 +869,7 @@
       <div class="form-row">
         <label class="form-label">Series name *</label>
         <input id="ns-series-name" class="form-input" type="text" placeholder="e.g. wind_generation" autocomplete="off">
-        <div class="form-hint">Filename without .csv</div>
+        <div class="form-hint">Filename without extension (saved as .tsv)</div>
       </div>
       <div class="form-row">
         <label class="form-label">Number of rows (time steps)</label>
@@ -1026,7 +1100,18 @@ document.addEventListener('DOMContentLoaded', () => {
   initSocket();
   loadStudiesList();
   loadStudy(currentStudy);
+  syncSimulationStatus();
 });
+
+async function syncSimulationStatus() {
+  try {
+    const res = await fetch('/api/simulate/status');
+    const data = await res.json();
+    setRunning(!!data.running);
+  } catch (e) {
+    // Status check is best-effort; leave UI in its default idle state on failure.
+  }
+}
 
 // ══════════════════════════════════════════════
 //  SOCKET.IO
@@ -1799,6 +1884,14 @@ const CHART_COLORS = ['#58a6ff','#3fb950','#f0883e','#f85149','#bc8cff','#39c5cf
 let colorIdx = 0;
 function nextColor() { return CHART_COLORS[colorIdx++ % CHART_COLORS.length]; }
 
+function resultFileLabel(f) {
+  // antares-modeler results: "<timestamp>/simulation_table.csv" -> show the run timestamp.
+  // Older/manual flat results: "simulation_table--<timestamp>.csv" -> strip the boilerplate.
+  const parts = f.split('/');
+  if (parts.length > 1) return parts[0];
+  return f.replace('simulation_table--', '').replace('.csv', '');
+}
+
 async function loadResultFiles() {
   const res   = await fetch(`/api/results?study=${currentStudy}`);
   const files = await res.json();
@@ -1811,7 +1904,7 @@ async function loadResultFiles() {
 
   list.innerHTML = files.map(f => `
     <div class="res-file-item" onclick="selectResultFile('${f}')" id="rfile-${CSS.escape(f)}"
-         title="${f}">${f.replace('simulation_table--','').replace('.csv','')}</div>
+         title="${f}">${resultFileLabel(f)}</div>
   `).join('');
 
   // Auto-select newest
@@ -1853,6 +1946,21 @@ async function selectResultFile(filename) {
   // Download link
   document.getElementById('res-download').href = `/api/results/download?study=${currentStudy}&file=${encodeURIComponent(filename)}`;
   document.getElementById('res-download').setAttribute('download', filename);
+
+  // Debug files (.mps / structure.txt), present when export-mps: true was set for this run
+  const debugEl = document.getElementById('res-debug-files');
+  const dbgRes  = await fetch(`/api/results/debug-files?study=${currentStudy}&file=${encodeURIComponent(filename)}`);
+  const dbgFiles = await dbgRes.json();
+  if (Array.isArray(dbgFiles) && dbgFiles.length) {
+    debugEl.style.display = '';
+    debugEl.innerHTML = 'Debug files: ' + dbgFiles.map(f => {
+      const label = f.split('/').pop();
+      const url = `/api/results/download?study=${currentStudy}&file=${encodeURIComponent(f)}`;
+      return `<a href="${url}" download="${label}" style="color:var(--accent);margin-right:10px;">${label}</a>`;
+    }).join('');
+  } else {
+    debugEl.style.display = 'none';
+  }
 
   clearChart();
 }
@@ -2122,7 +2230,7 @@ async function loadDataFile(filename) {
   const el = document.getElementById(`dfile-${filename}`);
   if (el) el.classList.add('active');
 
-  document.getElementById('data-filename').textContent = filename + '.csv';
+  document.getElementById('data-filename').textContent = filename;
   document.getElementById('data-filename').style.color = 'var(--text)';
   document.getElementById('data-dirty-badge').style.display = 'none';
   document.getElementById('data-save-btn').disabled = true;
@@ -2236,7 +2344,7 @@ async function saveTimeSeries() {
     document.getElementById('data-dirty-badge').style.display = 'none';
     document.getElementById('data-save-btn').disabled = true;
     document.querySelectorAll('#data-table td.dirty').forEach(td => td.classList.remove('dirty'));
-    log(`Saved: ${activeDataFile}.csv`, 'ok');
+    log(`Saved: ${activeDataFile}`, 'ok');
     // Refresh chart
     if (document.getElementById('data-chart-view').style.display !== 'none') renderDataChart();
   } else {
@@ -2417,7 +2525,7 @@ function clearChart() { clearSeries(); }
 // ══════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  ['editor','data','library','results'].forEach(t =>
+  ['editor','data','library','results','params'].forEach(t =>
     document.getElementById(`tab-${t}`).classList.toggle('active', t === tab)
   );
   const editorEls = ['palette','canvas-wrap','properties','editor-btns'];
@@ -2425,9 +2533,133 @@ function switchTab(tab) {
   document.getElementById('results-view').style.display = tab === 'results' ? 'flex' : 'none';
   document.getElementById('data-view').style.display    = tab === 'data'    ? 'flex' : 'none';
   document.getElementById('library-view').style.display = tab === 'library' ? 'flex' : 'none';
+  document.getElementById('params-view').style.display  = tab === 'params'  ? 'flex' : 'none';
   if (tab === 'results') { loadResultFiles(); safeResize(resChart); }
   if (tab === 'data')    { loadDataFiles();   safeResize(dataChart); }
   if (tab === 'library') loadLibraryFiles();
+  if (tab === 'params')  { loadParameters(); loadOptimConfig(); }
+}
+
+// ══════════════════════════════════════════════
+//  PARAMETERS (parameters.yml)
+// ══════════════════════════════════════════════
+const KNOWN_SOLVERS = ['highs', 'coin', 'xpress', 'scip', 'glpk', 'gurobi', 'sirius', 'pdlp'];
+
+async function loadParameters() {
+  const sel = document.getElementById('param-solver');
+  if (!sel.options.length) {
+    sel.innerHTML = KNOWN_SOLVERS.map(s => `<option value="${s}">${s}</option>`).join('');
+  }
+
+  const statusEl = document.getElementById('param-status');
+  statusEl.textContent = '';
+  const res = await fetch(`/api/parameters?study=${currentStudy}`);
+  const data = await res.json();
+  if (data.error) { log(`Failed to load parameters: ${data.error}`, 'err'); return; }
+
+  document.getElementById('param-first-ts').value      = data['first-time-step'] ?? 0;
+  document.getElementById('param-last-ts').value        = data['last-time-step'] ?? 0;
+  document.getElementById('param-solver-params').value  = data['solver-parameters'] ?? '';
+  document.getElementById('param-solver-logs').checked  = !!data['solver-logs'];
+  document.getElementById('param-no-output').checked    = !!data['no-output'];
+  document.getElementById('param-export-mps').checked   = !!data['export-mps'];
+  sel.value = data['solver'] ?? 'coin';
+}
+
+async function saveParameters() {
+  const statusEl = document.getElementById('param-status');
+  const body = {
+    study:               currentStudy,
+    'first-time-step':   parseInt(document.getElementById('param-first-ts').value, 10) || 0,
+    'last-time-step':    parseInt(document.getElementById('param-last-ts').value, 10) || 0,
+    'solver':             document.getElementById('param-solver').value,
+    'solver-parameters':  document.getElementById('param-solver-params').value,
+    'solver-logs':        document.getElementById('param-solver-logs').checked,
+    'no-output':          document.getElementById('param-no-output').checked,
+    'export-mps':         document.getElementById('param-export-mps').checked,
+  };
+  const res = await fetch('/api/parameters', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (data.status === 'ok') {
+    statusEl.textContent = 'Saved';
+    log('Parameters saved', 'ok');
+  } else {
+    statusEl.textContent = '';
+    log(`Failed to save parameters: ${data.error || JSON.stringify(data)}`, 'err');
+  }
+}
+
+const OPTIM_CONFIG_TEMPLATE = `resolution-mode: benders-decomposition
+models:
+  - id: <library_id>.<model_id>
+    model-decomposition:
+      variables:
+        - id: <variable_id>
+          location: master-and-subproblems
+      objective-contributions:
+        - id: <objective_contribution_id>
+          location: master
+`;
+
+function renderOptimConfigBadge(exists) {
+  const badge = document.getElementById('optim-config-badge');
+  badge.textContent = exists ? 'present' : 'not present';
+  document.getElementById('optim-config-editor').style.display     = exists ? '' : 'none';
+  document.getElementById('optim-config-create-btn').style.display = exists ? 'none' : '';
+}
+
+async function loadOptimConfig() {
+  document.getElementById('optim-config-status').textContent = '';
+  const res  = await fetch(`/api/optim-config?study=${currentStudy}`);
+  const data = await res.json();
+  if (data.error) { log(`Failed to load optim-config.yml: ${data.error}`, 'err'); return; }
+  document.getElementById('optim-config-text').value = data.content;
+  renderOptimConfigBadge(data.exists);
+}
+
+function createOptimConfig() {
+  document.getElementById('optim-config-text').value = OPTIM_CONFIG_TEMPLATE;
+  renderOptimConfigBadge(true);
+}
+
+async function saveOptimConfig() {
+  const statusEl = document.getElementById('optim-config-status');
+  const content  = document.getElementById('optim-config-text').value;
+  const res = await fetch('/api/optim-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ study: currentStudy, content }),
+  });
+  const data = await res.json();
+  if (data.status === 'ok') {
+    statusEl.textContent = 'Saved';
+    log('optim-config.yml saved', 'ok');
+    renderOptimConfigBadge(true);
+  } else {
+    statusEl.textContent = '';
+    log(`Failed to save optim-config.yml: ${data.error || JSON.stringify(data)}`, 'err');
+  }
+}
+
+async function deleteOptimConfig() {
+  if (!confirm('Delete optim-config.yml? This study will fall back to no model decomposition.')) return;
+  const res = await fetch('/api/optim-config', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ study: currentStudy }),
+  });
+  const data = await res.json();
+  if (data.status === 'ok') {
+    document.getElementById('optim-config-text').value = '';
+    renderOptimConfigBadge(false);
+    log('optim-config.yml deleted', 'ok');
+  } else {
+    log(`Failed to delete optim-config.yml: ${data.error || JSON.stringify(data)}`, 'err');
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -3094,7 +3326,7 @@ async function confirmNewSeries() {
   const json = await res.json();
   if (json.status === 'ok') {
     closeNewSeriesModal();
-    log(`Created: ${name}.csv (${rows} rows × ${cols} cols)`, 'ok');
+    log(`Created: ${name}.tsv (${rows} rows × ${cols} cols)`, 'ok');
     dataSeries = [...dataSeries, name].sort();
     await loadDataFiles();
     loadDataFile(name);
